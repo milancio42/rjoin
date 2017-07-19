@@ -112,6 +112,7 @@ impl Record {
 
             if advance_key {
                 ko = kit.next();
+                fe_last = fe;
             } else {
                 self.non_key_fields.extend_from_slice(&self.fields[fe_last..fe]);
                 let nkfe = nkfe_last + (fe - fe_last);
@@ -288,6 +289,17 @@ mod tests {
         assert_eq!(rec.get_field(2), Some(&b"quux"[..]));
         assert_eq!(rec.get_field(3), None);
         assert_eq!(rec.get_field(4), None);
+
+        // by default, the first field is the key
+        assert_eq!(rec.get_key_field(0), Some(&b"foo"[..]));
+        assert_eq!(rec.get_key_field(1), None);
+        assert_eq!(rec.get_key_field(2), None);
+
+        // by default, the first field is the key
+        assert_eq!(rec.get_non_key_field(0), Some(&b"bar"[..]));
+        assert_eq!(rec.get_non_key_field(1), Some(&b"quux"[..]));
+        assert_eq!(rec.get_non_key_field(2), None);
+        assert_eq!(rec.get_non_key_field(3), None);
     }
 }
 

@@ -7,9 +7,9 @@ pub struct Record {
     fields: Vec<u8>,
     fields_bounds: Bounds,
     key_fields: Vec<u8>,
-    key_fields_ends: Vec<usize>,
+    key_fields_bounds: Bounds,
     non_key_fields: Vec<u8>,
-    non_key_fields_ends: Vec<usize>,
+    non_key_fields_bounds: Bounds,
     // field numbers composing the key in the original order
     key_idx: Vec<usize>,
     // field numbers composing the key sorted in ascending order
@@ -19,17 +19,9 @@ pub struct Record {
 impl Record {
     #[inline]
     pub fn load(&mut self, fields: &[u8], ends: &[usize]) -> Result<(), Box<Error>> {
-        // check if we have the internal buffers capient enough
-        while fields.len() > self.fields.len() {
-            self.expand_fields();
-        }
-        while ends.len() > self.fields_bounds.ends.len() {
-            self.expand_bounds();
-        }
-
-        self.fields[..fields.len()].copy_from_slice(fields);
-        self.fields_bounds.ends[..ends.len()].copy_from_slice(ends);
-        self.set_len(ends.len());
+        self.clear();
+        self.fields.extend_from_slice(fields);
+        self.fields_bounds.ends.extend_from_slice(ends);
         self.set_key_fields()?;
         self.set_non_key_fields()?;
         Ok(())
@@ -53,7 +45,7 @@ impl Record {
 
     #[inline]
     pub fn set_len(&mut self, len: usize) {
-        self.fields_bounds.len = len;
+        self.fields_bounds.ends.resize(len, 0);
     }
 
     #[inline]
@@ -61,84 +53,36 @@ impl Record {
         self.fields.clear();
         self.fields_bounds.clear();
         self.key_fields.clear();
-        self.key_fields_ends.clear();
+        self.key_fields_bounds.clear();
         self.non_key_fields.clear();
-        self.non_key_fields_ends.clear();
-    }
-
-    #[inline]
-    fn get_field_range(&self, i: usize) -> Option<Range<usize>> {
-        if i >= self.fields_bounds.len {
-            return None;
-        }
-        let end = match self.fields_bounds.ends.get(i) {
-            Some(&end) => end,
-            None => return None,
-        };
-        let start = match i.checked_sub(1).and_then(|i| self.fields_bounds.ends.get(i)) {
-            Some(&start) => start,
-            None => 0,
-        };
-        Some(start..end)
+        self.non_key_fields_bounds.clear();
     }
 
     #[inline]
     pub fn get_field(&self, i: usize) -> Option<&[u8]> {
-        self.get_field_range(i).map(|r| &self.fields[r])
+        self.fields_bounds.get(i).map(|r| &self.fields[r])
     }
         
-    #[inline]
-    fn get_key_field_range(&self, i: usize) -> Option<Range<usize>> {
-        if i >= self.key_fields_ends.len() {
-            return None;
-        }
-        let end = match self.key_fields_ends.get(i) {
-            Some(&end) => end,
-            None => return None,
-        };
-        let start = match i.checked_sub(1).and_then(|i| self.key_fields_ends.get(i)) {
-            Some(&start) => start,
-            None => 0,
-        };
-        Some(start..end)
-    }
-
     #[inline]
     pub fn get_key_field(&self, i: usize) -> Option<&[u8]> {
-        self.get_key_field_range(i).map(|r| &self.key_fields[r])
+        self.key_fields_bounds.get(i).map(|r| &self.key_fields[r])
     }
         
     #[inline]
-    fn get_non_key_field_range(&self, i: usize) -> Option<Range<usize>> {
-        if i >= self.non_key_fields_ends.len() {
-            return None;
-        }
-        let end = match self.non_key_fields_ends.get(i) {
-            Some(&end) => end,
-            None => return None,
-        };
-        let start = match i.checked_sub(1).and_then(|i| self.non_key_fields_ends.get(i)) {
-            Some(&start) => start,
-            None => 0,
-        };
-        Some(start..end)
-    }
-
-    #[inline]
     pub fn get_non_key_field(&self, i: usize) -> Option<&[u8]> {
-        self.get_non_key_field_range(i).map(|r| &self.non_key_fields[r])
+        self.non_key_fields_bounds.get(i).map(|r| &self.non_key_fields[r])
     }
 
     #[inline]
     pub fn set_key_fields(&mut self) -> Result<(), Box<Error>> {
         let mut end_last = 0;
         for &nf in &self.key_idx {
-            match self.get_field_range(nf) {
+            match self.fields_bounds.get(nf) {
                 Some(fr) => {
                     let f = &self.fields[fr];
                     self.key_fields.extend_from_slice(f);
                     let end = end_last + f.len();
-                    self.key_fields_ends.push(end);
+                    self.key_fields_bounds.ends.push(end);
                     end_last = end;
                 }
                 None => return Err(format!("The key field <{}> not found in data", nf).into()),
@@ -154,7 +98,7 @@ impl Record {
         let mut nf = 0;
         let mut kit = self.key_idx_asc.iter();
         let mut ko = kit.next();
-        for &fe in &self.fields_bounds.ends[..self.fields_bounds.len] {
+        for &fe in &self.fields_bounds.ends {
             let advance_key = match ko {
                 Some(&k) => {
                     if k == nf {
@@ -171,7 +115,7 @@ impl Record {
             } else {
                 self.non_key_fields.extend_from_slice(&self.fields[fe_last..fe]);
                 let nkfe = nkfe_last + (fe - fe_last);
-                self.non_key_fields_ends.push(nkfe);
+                self.non_key_fields_bounds.ends.push(nkfe);
                 nkfe_last = nkfe;
                 fe_last = fe;
             }
@@ -185,15 +129,13 @@ impl Record {
 #[derive(Debug, Eq, PartialEq)]
 struct Bounds {
     ends: Vec<usize>,
-    len: usize,
 }
 
 impl Bounds {
     #[inline]
     pub fn with_capacity(cap: usize) -> Self {
         Bounds {
-            ends: vec![0; cap],
-            len: 0,
+            ends: Vec::with_capacity(cap),
         }
     }
 
@@ -206,6 +148,22 @@ impl Bounds {
     #[inline]
     pub fn clear(&mut self) {
         self.ends.clear();
+    }
+
+    #[inline]
+    fn get(&self, i: usize) -> Option<Range<usize>> {
+        if i >= self.ends.len() {
+            return None;
+        }
+        let end = match self.ends.get(i) {
+            Some(&end) => end,
+            None => return None,
+        };
+        let start = match i.checked_sub(1).and_then(|i| self.ends.get(i)) {
+            Some(&start) => start,
+            None => 0,
+        };
+        Some(start..end)
     }
 }
 
@@ -303,9 +261,9 @@ impl RecordBuilder {
             fields: vec![0; self.fields_cap],
             fields_bounds: Bounds::with_capacity(self.fields_bounds_cap),
             key_fields: Vec::with_capacity(self.key_fields_cap),
-            key_fields_ends: Vec::with_capacity(self.key_fields_bounds_cap),
+            key_fields_bounds: Bounds::with_capacity(self.key_fields_bounds_cap),
             non_key_fields: Vec::with_capacity(self.non_key_fields_cap),
-            non_key_fields_ends: Vec::with_capacity(self.non_key_fields_bounds_cap),
+            non_key_fields_bounds: Bounds::with_capacity(self.non_key_fields_bounds_cap),
             // field numbers composing the key in the original order
             key_idx: key_idx,
             // field numbers composing the key sorted in ascending order

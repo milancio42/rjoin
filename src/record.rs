@@ -223,35 +223,22 @@ impl RecordBuilder {
         self
     }
 
-    // key list (index starts at 1)
     pub fn keys(mut self, k: &[usize]) -> Self {
         let key_idx: Vec<usize> = k.into();
         let mut key_idx_asc: Vec<usize> = key_idx.clone();
         key_idx_asc.sort();
 
         self.key_idx_asc = Ok(key_idx_asc)
-                            .and_then(|mut v| {
+                            .and_then(|v| {
                                 for w in v.windows(2) {
                                     if w[0] == w[1] {
                                         return Err("the key fields must be unique".into());
                                     }
                                 }
-                                if v.iter().any(|&e| e < 1) {
-                                    return Err("the key fields index starts at 1".into());
-                                }
-                                for e in v.iter_mut() {
-                                    *e -= 1;
-                                }
                                 Ok(v)
                             });
         // at this point we applied all the checks so we can safely write the key_idx
-        self.key_idx = Ok(key_idx)
-                        .and_then(|mut v| {
-                            for e in v.iter_mut() {
-                                *e -= 1;
-                            }
-                            Ok(v)
-                        });
+        self.key_idx = Ok(key_idx);
         self
     }
 
@@ -297,6 +284,30 @@ mod tests {
 
         // by default, the first field is the key
         assert_eq!(rec.get_non_key_field(0), Some(&b"bar"[..]));
+        assert_eq!(rec.get_non_key_field(1), Some(&b"quux"[..]));
+        assert_eq!(rec.get_non_key_field(2), None);
+        assert_eq!(rec.get_non_key_field(3), None);
+    }
+
+    #[test]
+    fn record_2() {
+        let mut rec = RecordBuilder::default()
+                                    .keys(&[1])
+                                    .build().unwrap();
+        
+        rec.load(b"foobarquux", &[3,6,10]).unwrap();
+        
+        assert_eq!(rec.get_field(0), Some(&b"foo"[..]));
+        assert_eq!(rec.get_field(1), Some(&b"bar"[..]));
+        assert_eq!(rec.get_field(2), Some(&b"quux"[..]));
+        assert_eq!(rec.get_field(3), None);
+        assert_eq!(rec.get_field(4), None);
+
+        assert_eq!(rec.get_key_field(0), Some(&b"bar"[..]));
+        assert_eq!(rec.get_key_field(1), None);
+        assert_eq!(rec.get_key_field(2), None);
+
+        assert_eq!(rec.get_non_key_field(0), Some(&b"foo"[..]));
         assert_eq!(rec.get_non_key_field(1), Some(&b"quux"[..]));
         assert_eq!(rec.get_non_key_field(2), None);
         assert_eq!(rec.get_non_key_field(3), None);

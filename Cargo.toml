@@ -1,0 +1,7 @@
+[package]
+name = "rjoin"
+version = "0.1.0"
+authors = ["Milan Opath <milan.opath@gmail.com>"]
+
+[dependencies]
+csv-core = "*"

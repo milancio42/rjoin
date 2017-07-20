@@ -105,6 +105,7 @@ impl<R: io::Read> Reader<R> {
 mod tests {
     use super::ReaderBuilder;
     use record::RecordBuilder;
+    use csv_core::Terminator;
     
     #[test]
     fn read_1() {
@@ -120,6 +121,15 @@ mod tests {
         assert_eq!(rec.get_field(3), None);
         assert_eq!(rec.get_field(4), None);
 
+        assert_eq!(rec.get_key_field(0), Some(&b"1"[..]));
+        assert_eq!(rec.get_key_field(1), None);
+        assert_eq!(rec.get_key_field(2), None);
+
+        assert_eq!(rec.get_non_key_field(0), Some(&b"Aragorn"[..]));
+        assert_eq!(rec.get_non_key_field(1), Some(&b"The Lord of the Rings"[..]));
+        assert_eq!(rec.get_non_key_field(2), None);
+        assert_eq!(rec.get_non_key_field(3), None);
+
         let _ = rdr.read_record(&mut rec).unwrap();
 
         assert_eq!(rec.get_field(0), Some(&b"2"[..]));
@@ -127,5 +137,57 @@ mod tests {
         assert_eq!(rec.get_field(2), Some(&b"The Song of Ice and Fire"[..]));
         assert_eq!(rec.get_field(3), None);
         assert_eq!(rec.get_field(4), None);
+
+        assert_eq!(rec.get_key_field(0), Some(&b"2"[..]));
+        assert_eq!(rec.get_key_field(1), None);
+        assert_eq!(rec.get_key_field(2), None);
+
+        assert_eq!(rec.get_non_key_field(0), Some(&b"Jon Snow"[..]));
+        assert_eq!(rec.get_non_key_field(1), Some(&b"The Song of Ice and Fire"[..]));
+        assert_eq!(rec.get_non_key_field(2), None);
+        assert_eq!(rec.get_non_key_field(3), None);
+    }
+
+    #[test]
+    fn read_2() {
+        let data = "1;Aragorn;The Lord of the Rings$2;Jon Snow;The Song of Ice and Fire";
+        let mut rdr = ReaderBuilder::default().delimiter(b';')
+                                              .terminator(Terminator::Any(b'$'))
+                                              .from_reader(data.as_bytes());
+        let mut rec = RecordBuilder::default().build().unwrap();
+
+        let _ = rdr.read_record(&mut rec).unwrap();
+
+        assert_eq!(rec.get_field(0), Some(&b"1"[..]));
+        assert_eq!(rec.get_field(1), Some(&b"Aragorn"[..]));
+        assert_eq!(rec.get_field(2), Some(&b"The Lord of the Rings"[..]));
+        assert_eq!(rec.get_field(3), None);
+        assert_eq!(rec.get_field(4), None);
+
+        assert_eq!(rec.get_key_field(0), Some(&b"1"[..]));
+        assert_eq!(rec.get_key_field(1), None);
+        assert_eq!(rec.get_key_field(2), None);
+
+        assert_eq!(rec.get_non_key_field(0), Some(&b"Aragorn"[..]));
+        assert_eq!(rec.get_non_key_field(1), Some(&b"The Lord of the Rings"[..]));
+        assert_eq!(rec.get_non_key_field(2), None);
+        assert_eq!(rec.get_non_key_field(3), None);
+
+        let _ = rdr.read_record(&mut rec).unwrap();
+
+        assert_eq!(rec.get_field(0), Some(&b"2"[..]));
+        assert_eq!(rec.get_field(1), Some(&b"Jon Snow"[..]));
+        assert_eq!(rec.get_field(2), Some(&b"The Song of Ice and Fire"[..]));
+        assert_eq!(rec.get_field(3), None);
+        assert_eq!(rec.get_field(4), None);
+
+        assert_eq!(rec.get_key_field(0), Some(&b"2"[..]));
+        assert_eq!(rec.get_key_field(1), None);
+        assert_eq!(rec.get_key_field(2), None);
+
+        assert_eq!(rec.get_non_key_field(0), Some(&b"Jon Snow"[..]));
+        assert_eq!(rec.get_non_key_field(1), Some(&b"The Song of Ice and Fire"[..]));
+        assert_eq!(rec.get_non_key_field(2), None);
+        assert_eq!(rec.get_non_key_field(3), None);
     }
 }

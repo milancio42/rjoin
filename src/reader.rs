@@ -1,4 +1,4 @@
-use super::record::Record;
+use super::record::{Record, Group};
 use super::csv_core;
 
 use std::io::{self, BufRead};
@@ -62,10 +62,10 @@ impl<R: io::Read> Reader<R> {
     ) -> Result<bool, Box<Error>> {
         use csv_core::ReadRecordResult::*;
 
-        record.clear();
         if self.state.eof {
             return Ok(false);
         }
+        record.clear();
         let (mut outlen, mut endlen) = (0, 0);
         loop {
             let (res, nin, nout, nend) = {
@@ -99,21 +99,53 @@ impl<R: io::Read> Reader<R> {
             }
         }
     }
+
+    pub fn read_group(
+        &mut self, 
+        group: &mut Group,
+    ) -> Result<bool, Box<Error>> {
+        if group.is_fused() {
+            return Ok(false);
+        }
+        group.clear();
+        if group.is_first() {
+            if self.read_record(group.look_ahead_mut())? {
+                group.not_first();
+            } else {
+                group.fused();
+                return Ok(false);
+            }
+        }
+        loop {
+            group.push_rec();
+            if self.read_record(group.look_ahead_mut())? {
+                if group.is_group() {
+                    continue;
+                } else {
+                    return Ok(true);
+                }
+            } else {
+                group.fused();
+                return Ok(true);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::ReaderBuilder;
-    use record::RecordBuilder;
+    use record::{RecordBuilder, GroupBuilder};
     use csv_core::Terminator;
     
     #[test]
-    fn read_1() {
+    fn read_rec_1() {
         let data = "1,Aragorn,The Lord of the Rings\n2,Jon Snow,The Song of Ice and Fire";
         let mut rdr = ReaderBuilder::default().from_reader(data.as_bytes());
         let mut rec = RecordBuilder::default().build().unwrap();
 
         let _ = rdr.read_record(&mut rec).unwrap();
+        println!("{:?}", rec);
 
         assert_eq!(rec.get_field(0), Some(&b"1"[..]));
         assert_eq!(rec.get_field(1), Some(&b"Aragorn"[..]));
@@ -131,6 +163,7 @@ mod tests {
         assert_eq!(rec.get_non_key_field(3), None);
 
         let _ = rdr.read_record(&mut rec).unwrap();
+        println!("{:?}", rec);
 
         assert_eq!(rec.get_field(0), Some(&b"2"[..]));
         assert_eq!(rec.get_field(1), Some(&b"Jon Snow"[..]));
@@ -149,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn read_2() {
+    fn read_rec_2() {
         let data = "1;Aragorn;The Lord of the Rings$2;Jon Snow;The Song of Ice and Fire";
         let mut rdr = ReaderBuilder::default().delimiter(b';')
                                               .terminator(Terminator::Any(b'$'))
@@ -190,4 +223,78 @@ mod tests {
         assert_eq!(rec.get_non_key_field(2), None);
         assert_eq!(rec.get_non_key_field(3), None);
     }
+
+    #[test]
+    fn read_group_1() {
+        let data = "color,red\ncolor,green\ncolor,blue\nshape,circle\nshape,square";
+        let mut rdr = ReaderBuilder::default().from_reader(data.as_bytes());
+        let rec = RecordBuilder::default().build().unwrap();
+        let mut g = GroupBuilder::default().from_record(rec);
+
+        let _ = rdr.read_group(&mut g).unwrap();
+
+        assert_eq!(g.get_field(0, 0), Some(&b"color"[..]));
+        assert_eq!(g.get_field(0, 1), Some(&b"red"[..]));
+        assert_eq!(g.get_field(0, 2), None);
+        assert_eq!(g.get_field(0, 3), None);
+
+        assert_eq!(g.get_field(1, 0), Some(&b"color"[..]));
+        assert_eq!(g.get_field(1, 1), Some(&b"green"[..]));
+        assert_eq!(g.get_field(1, 2), None);
+        assert_eq!(g.get_field(1, 3), None);
+
+        assert_eq!(g.get_field(2, 0), Some(&b"color"[..]));
+        assert_eq!(g.get_field(2, 1), Some(&b"blue"[..]));
+        assert_eq!(g.get_field(2, 2), None);
+        assert_eq!(g.get_field(2, 3), None);
+
+        assert_eq!(g.get_field(3, 0), None);
+
+        assert_eq!(g.get_first_key_field(0), Some(&b"color"[..]));
+        assert_eq!(g.get_first_key_field(1), None);
+        assert_eq!(g.get_first_key_field(2), None);
+
+        assert_eq!(g.get_non_key_field(0, 0), Some(&b"red"[..]));
+        assert_eq!(g.get_non_key_field(0, 1), None);
+        assert_eq!(g.get_non_key_field(0, 2), None);
+
+        assert_eq!(g.get_non_key_field(1, 0), Some(&b"green"[..]));
+        assert_eq!(g.get_non_key_field(1, 1), None);
+        assert_eq!(g.get_non_key_field(1, 2), None);
+
+        assert_eq!(g.get_non_key_field(2, 0), Some(&b"blue"[..]));
+        assert_eq!(g.get_non_key_field(2, 1), None);
+        assert_eq!(g.get_non_key_field(2, 2), None);
+
+        assert_eq!(g.get_non_key_field(3, 0), None);
+
+        let _ = rdr.read_group(&mut g).unwrap();
+
+        assert_eq!(g.get_field(0, 0), Some(&b"shape"[..]));
+        assert_eq!(g.get_field(0, 1), Some(&b"circle"[..]));
+        assert_eq!(g.get_field(0, 2), None);
+        assert_eq!(g.get_field(0, 3), None);
+
+        assert_eq!(g.get_field(1, 0), Some(&b"shape"[..]));
+        assert_eq!(g.get_field(1, 1), Some(&b"square"[..]));
+        assert_eq!(g.get_field(1, 2), None);
+        assert_eq!(g.get_field(1, 3), None);
+
+        assert_eq!(g.get_field(2, 0), None);
+
+        assert_eq!(g.get_first_key_field(0), Some(&b"shape"[..]));
+        assert_eq!(g.get_first_key_field(1), None);
+        assert_eq!(g.get_first_key_field(2), None);
+
+        assert_eq!(g.get_non_key_field(0, 0), Some(&b"circle"[..]));
+        assert_eq!(g.get_non_key_field(0, 1), None);
+        assert_eq!(g.get_non_key_field(0, 2), None);
+
+        assert_eq!(g.get_non_key_field(1, 0), Some(&b"square"[..]));
+        assert_eq!(g.get_non_key_field(1, 1), None);
+        assert_eq!(g.get_non_key_field(1, 2), None);
+
+        assert_eq!(g.get_non_key_field(2, 0), None);
+    }
+
 }

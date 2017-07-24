@@ -229,6 +229,11 @@ impl Bounds {
     fn get(&self, i: usize) -> Option<Range<usize>> {
         get_bound(&self.ends, i)
     }
+
+    #[inline]
+    fn end(&self) -> usize {
+        self.ends.last().map_or(0, |i| *i)
+    }
 }
 
 pub struct GroupBuilder {
@@ -331,7 +336,8 @@ impl Group {
     #[inline]
     pub fn push_rec(&mut self) {
         self.fields_bounds.ends.push(self.fields.len());
-        self.fields.extend_from_slice(&self.look_ahead.fields);
+        let e = self.look_ahead.fields_bounds.end();
+        self.fields.extend_from_slice(&self.look_ahead.fields[..e]);
         self.fields_bounds.ends.extend_from_slice(&self.look_ahead.fields_bounds.ends);
         self.recs.ends.push(self.fields_bounds.ends.len());
 

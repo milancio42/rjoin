@@ -145,7 +145,6 @@ mod tests {
         let mut rec = RecordBuilder::default().build().unwrap();
 
         let _ = rdr.read_record(&mut rec).unwrap();
-        println!("{:?}", rec);
 
         assert_eq!(rec.get_field(0), Some(&b"1"[..]));
         assert_eq!(rec.get_field(1), Some(&b"Aragorn"[..]));
@@ -163,7 +162,6 @@ mod tests {
         assert_eq!(rec.get_non_key_field(3), None);
 
         let _ = rdr.read_record(&mut rec).unwrap();
-        println!("{:?}", rec);
 
         assert_eq!(rec.get_field(0), Some(&b"2"[..]));
         assert_eq!(rec.get_field(1), Some(&b"Jon Snow"[..]));

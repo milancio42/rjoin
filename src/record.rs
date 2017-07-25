@@ -232,7 +232,7 @@ impl Bounds {
 
     #[inline]
     fn end(&self) -> usize {
-        self.ends.last().map_or(0, |i| *i)
+        end(&self.ends)
     }
 }
 
@@ -387,6 +387,39 @@ impl Group {
                                                                         .ends[r], field_i))
                             .map(|(o, r)| &self.non_key_fields[o..][r])
     }
+
+    #[inline]
+    pub fn iter<'g>(&'g self) -> GroupIter<'g> {
+        GroupIter {
+           f: &self.fields,
+           fe: &self.fields_bounds.ends,
+           r: &self.recs.ends,
+           r_end_last: 0,
+           i: 0,
+        }
+    }
+
+    #[inline]
+    pub fn first_key_iter<'r>(&'r self) -> RecIter<'r> {
+        RecIter {
+           f: &self.first_key_fields,
+           fe: &self.first_key_fields_bounds.ends,
+           end_last: 0,
+           i: 0,
+        }
+    }
+
+    #[inline]
+    pub fn non_key_iter<'g>(&'g self) -> GroupIter<'g> {
+        GroupIter {
+           f: &self.non_key_fields,
+           fe: &self.non_key_fields_bounds.ends,
+           r: &self.non_key_recs.ends,
+           r_end_last: 0,
+           i: 0,
+        }
+    }
+
 }
 
 #[inline]
@@ -424,6 +457,12 @@ fn get_bound_offset(ends: &[usize], i: usize) -> Option<(usize, Range<usize>)> {
 }
 
 #[inline]
+fn end(ends: &[usize]) -> usize {
+    ends.last().map_or(0, |i| *i)
+}
+    
+
+#[inline]
 fn cmp_keys(
     fields: &[u8],
     bounds: &[usize],
@@ -448,6 +487,59 @@ fn cmp_keys(
     }
     Equal
 }
+
+pub struct RecIter<'r> {
+    f: &'r [u8],
+    fe: &'r [usize],
+    end_last: usize,
+    i: usize,
+}
+
+impl<'r> Iterator for RecIter<'r> {
+    type Item = &'r [u8];
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.fe.len() {
+            None
+        } else {
+            let start = self.end_last;
+            let end = self.fe[self.i];
+            self.i += 1;
+            self.end_last = end;
+            Some(&self.f[start..end])
+        }
+    }
+}
+
+pub struct GroupIter<'g> {
+    f: &'g [u8],
+    fe: &'g [usize],
+    r: &'g [usize],
+    r_end_last: usize,
+    i: usize,
+}
+
+impl<'g> Iterator for GroupIter<'g> {
+    type Item = (&'g [u8], &'g [usize]);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.r.len() {
+            None
+        } else {
+            let r_start = self.r_end_last;
+            let r_end = self.r[self.i];
+            let fe = &self.fe[r_start..r_end];
+            let offset = fe[0];
+            let f_end = end(fe);
+            self.i += 1;
+            self.r_end_last = r_end;
+            Some((&self.f[offset..][..f_end], &fe[1..]))
+        }
+    }
+}
+
     
 #[cfg(test)]
 mod tests {
@@ -538,6 +630,33 @@ mod tests {
         assert_eq!(g.get_non_key_field(1, 1), Some(&b"two"[..]));
         assert_eq!(g.get_non_key_field(1, 2), None);
         assert_eq!(g.get_non_key_field(1, 3), None);
+    }
+
+    #[test]
+    fn group_iter() {
+        let rec = RecordBuilder::default().build().unwrap();
+        let mut g = GroupBuilder::default().from_record(rec);
+        
+        g.look_ahead_mut().load(b"foobarquux", &[3,6,10]).unwrap();
+        g.push_rec();
+        g.look_ahead_mut().load(b"foofortytwo", &[3,8,11]).unwrap();
+        g.push_rec();
+
+        let mut g_it = g.iter();
+        assert_eq!(g_it.next().unwrap(), (&b"foobarquux"[..], &[3,6,10][..]));
+        assert_eq!(g_it.next().unwrap(), (&b"foofortytwo"[..], &[3,8,11][..]));
+        assert_eq!(g_it.next(), None);
+        assert_eq!(g_it.next(), None);
+        
+        let mut gk_it = g.first_key_iter();
+        assert_eq!(gk_it.next().unwrap(), &b"foo"[..]);
+        assert_eq!(gk_it.next(), None);
+
+        let mut gnk_it = g.non_key_iter();
+        assert_eq!(gnk_it.next().unwrap(), (&b"barquux"[..], &[3,7][..]));
+        assert_eq!(gnk_it.next().unwrap(), (&b"fortytwo"[..], &[5,8][..]));
+        assert_eq!(gnk_it.next(), None);
+        assert_eq!(gnk_it.next(), None);
     }
 }
 

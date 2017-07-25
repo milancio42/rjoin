@@ -198,6 +198,36 @@ impl Record {
         }
         Ok(())
     }
+
+    #[inline]
+    pub fn iter<'r>(&'r self) -> RecIter<'r> {
+        RecIter {
+           f: &self.fields,
+           fe: &self.fields_bounds.ends,
+           end_last: 0,
+           i: 0,
+        }
+    }
+
+    #[inline]
+    pub fn key_iter<'r>(&'r self) -> RecIter<'r> {
+        RecIter {
+           f: &self.key_fields,
+           fe: &self.key_fields_bounds.ends,
+           end_last: 0,
+           i: 0,
+        }
+    }
+
+    #[inline]
+    pub fn non_key_iter<'r>(&'r self) -> RecIter<'r> {
+        RecIter {
+           f: &self.non_key_fields,
+           fe: &self.non_key_fields_bounds.ends,
+           end_last: 0,
+           i: 0,
+        }
+    }
 }
 
 
@@ -495,6 +525,17 @@ pub struct RecIter<'r> {
     i: usize,
 }
 
+impl<'r> RecIter<'r> {
+    pub fn from_fields(fields: &'r [u8], ends: &'r [usize]) -> Self {
+        RecIter {
+            f: fields,
+            fe: ends,
+            end_last: 0,
+            i: 0,
+        }
+    }
+}
+
 impl<'r> Iterator for RecIter<'r> {
     type Item = &'r [u8];
 
@@ -543,7 +584,7 @@ impl<'g> Iterator for GroupIter<'g> {
     
 #[cfg(test)]
 mod tests {
-    use super::{RecordBuilder, GroupBuilder};
+    use super::{RecordBuilder, GroupBuilder, RecIter};
 
     #[test]
     fn record_1() {
@@ -591,6 +632,47 @@ mod tests {
         assert_eq!(rec.get_non_key_field(1), Some(&b"quux"[..]));
         assert_eq!(rec.get_non_key_field(2), None);
         assert_eq!(rec.get_non_key_field(3), None);
+    }
+
+    #[test]
+    fn record_iter() {
+        let mut rec = RecordBuilder::default().build().unwrap();
+        
+        rec.load(b"foobarquux", &[3,6,10]).unwrap();
+
+        let mut r_it = rec.iter();
+
+        assert_eq!(r_it.next().unwrap(), &b"foo"[..]);
+        assert_eq!(r_it.next().unwrap(), &b"bar"[..]);
+        assert_eq!(r_it.next().unwrap(), &b"quux"[..]);
+        assert_eq!(r_it.next(), None);
+        assert_eq!(r_it.next(), None);
+        
+        let mut rk_it = rec.key_iter();
+
+        assert_eq!(rk_it.next().unwrap(), &b"foo"[..]);
+        assert_eq!(rk_it.next(), None);
+        assert_eq!(rk_it.next(), None);
+
+        let mut rnk_it = rec.non_key_iter();
+
+        assert_eq!(rnk_it.next().unwrap(), &b"bar"[..]);
+        assert_eq!(rnk_it.next().unwrap(), &b"quux"[..]);
+        assert_eq!(rnk_it.next(), None);
+        assert_eq!(rnk_it.next(), None);
+    }
+
+    #[test]
+    fn record_iter_2() {
+        let fields = b"foobarquux";
+        let fields_ends = [3,6,10];
+        let mut r_it = RecIter::from_fields(fields, &fields_ends[..]);
+
+        assert_eq!(r_it.next().unwrap(), &b"foo"[..]);
+        assert_eq!(r_it.next().unwrap(), &b"bar"[..]);
+        assert_eq!(r_it.next().unwrap(), &b"quux"[..]);
+        assert_eq!(r_it.next(), None);
+        assert_eq!(r_it.next(), None);
     }
 
     #[test]

@@ -726,6 +726,48 @@ mod tests {
     }
 
     #[test]
+    fn group_1() {
+        let rec = RecordBuilder::default().build().unwrap();
+        let mut g = GroupBuilder::default().from_record(rec);
+        
+        g.look_ahead_mut().load(b"a", &[1]).unwrap();
+        g.push_rec();
+        g.look_ahead_mut().load(b"a0", &[1,2]).unwrap();
+        g.push_rec();
+        g.look_ahead_mut().load(b"a", &[1]).unwrap();
+        g.push_rec();
+        
+        assert_eq!(g.get_field(0, 0), Some(&b"a"[..]));
+        assert_eq!(g.get_field(0, 1), None);
+        assert_eq!(g.get_field(0, 2), None);
+
+        assert_eq!(g.get_field(1, 0), Some(&b"a"[..]));
+        assert_eq!(g.get_field(1, 1), Some(&b"0"[..]));
+        assert_eq!(g.get_field(1, 2), None);
+        assert_eq!(g.get_field(1, 3), None);
+
+        assert_eq!(g.get_field(2, 0), Some(&b"a"[..]));
+        assert_eq!(g.get_field(2, 1), None);
+        assert_eq!(g.get_field(2, 2), None);
+
+        // by default, the first field is the key
+        assert_eq!(g.get_first_key_field(0), Some(&b"a"[..]));
+        assert_eq!(g.get_first_key_field(1), None);
+        assert_eq!(g.get_first_key_field(2), None);
+
+        // by default, the first field is the key
+        assert_eq!(g.get_non_key_field(0, 0), None);
+        assert_eq!(g.get_non_key_field(0, 1), None);
+
+        assert_eq!(g.get_non_key_field(1, 0), Some(&b"0"[..]));
+        assert_eq!(g.get_non_key_field(1, 1), None);
+        assert_eq!(g.get_non_key_field(1, 2), None);
+
+        assert_eq!(g.get_non_key_field(2, 0), None);
+        assert_eq!(g.get_non_key_field(2, 1), None);
+    }
+
+    #[test]
     fn group_iter() {
         let rec = RecordBuilder::default().build().unwrap();
         let mut g = GroupBuilder::default().from_record(rec);

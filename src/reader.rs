@@ -119,7 +119,7 @@ impl<R: io::Read> Reader<R> {
         loop {
             group.push_rec();
             if self.read_record(group.look_ahead_mut())? {
-                if group.is_group() {
+                if group.is_group()? {
                     continue;
                 } else {
                     return Ok(true);
@@ -139,7 +139,7 @@ mod tests {
     use csv_core::Terminator;
     
     #[test]
-    fn read_rec_1() {
+    fn read_rec_0() {
         let data = "1,Aragorn,The Lord of the Rings\n2,Jon Snow,The Song of Ice and Fire";
         let mut rdr = ReaderBuilder::default().from_reader(data.as_bytes());
         let mut rec = RecordBuilder::default().build().unwrap();
@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn read_rec_2() {
+    fn read_rec_1() {
         let data = "1;Aragorn;The Lord of the Rings$2;Jon Snow;The Song of Ice and Fire";
         let mut rdr = ReaderBuilder::default().delimiter(b';')
                                               .terminator(Terminator::Any(b'$'))
@@ -223,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn read_group_1() {
+    fn read_group_0() {
         let data = "color,red\ncolor,green\ncolor,blue\nshape,circle\nshape,square";
         let mut rdr = ReaderBuilder::default().from_reader(data.as_bytes());
         let rec = RecordBuilder::default().build().unwrap();

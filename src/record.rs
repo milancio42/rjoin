@@ -390,14 +390,24 @@ impl Group {
     }
 
     #[inline]
-    pub fn is_group(&self) -> bool {
+    pub fn is_group(&self) -> Result<bool, Box<Error>> {
         match cmp_keys(&self.look_ahead.key_fields,
                        &self.look_ahead.key_fields_bounds.ends,
                        &self.first_key_fields,
                        &self.first_key_fields_bounds.ends) {
-            cmp::Ordering::Equal => true,
-            _ => false,
+            cmp::Ordering::Less => return Err("The records are not sorted in ascending order"
+                                                 .into()),
+            cmp::Ordering:: Greater=> Ok(false),
+            cmp::Ordering::Equal => Ok(true),
         }
+    }
+
+    #[inline]
+    pub fn cmp_keys(&self, other: &Group) -> cmp::Ordering {
+        cmp_keys(&self.first_key_fields,
+                 &self.first_key_fields_bounds.ends,
+                 &other.first_key_fields,
+                 &other.first_key_fields_bounds.ends)
     }
 
     #[inline]
@@ -585,9 +595,10 @@ impl<'g> Iterator for GroupIter<'g> {
 #[cfg(test)]
 mod tests {
     use super::{RecordBuilder, GroupBuilder, RecIter};
+    use std::cmp::Ordering;
 
     #[test]
-    fn record_1() {
+    fn record_0() {
         let mut rec = RecordBuilder::default().build().unwrap();
         
         rec.load(b"foobarquux", &[3,6,10]).unwrap();
@@ -611,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn record_2() {
+    fn record_1() {
         let mut rec = RecordBuilder::default()
                                     .keys(&[1])
                                     .build().unwrap();
@@ -635,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn record_iter() {
+    fn record_iter_0() {
         let mut rec = RecordBuilder::default().build().unwrap();
         
         rec.load(b"foobarquux", &[3,6,10]).unwrap();
@@ -663,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    fn record_iter_2() {
+    fn record_iter_1() {
         let fields = b"foobarquux";
         let fields_ends = [3,6,10];
         let mut r_it = RecIter::from_fields(fields, &fields_ends[..]);
@@ -676,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn group_1() {
+    fn group_0() {
         let rec = RecordBuilder::default().build().unwrap();
         let mut g = GroupBuilder::default().from_record(rec);
         
@@ -739,6 +750,64 @@ mod tests {
         assert_eq!(gnk_it.next().unwrap(), (&b"fortytwo"[..], &[5,8][..]));
         assert_eq!(gnk_it.next(), None);
         assert_eq!(gnk_it.next(), None);
+    }
+
+    #[test]
+    fn group_cmp_keys_equal() {
+        let r0 = RecordBuilder::default().build().unwrap();
+        let mut g0 = GroupBuilder::default().from_record(r0);
+
+        let r1 = RecordBuilder::default().build().unwrap();
+        let mut g1 = GroupBuilder::default().from_record(r1);
+
+        g0.look_ahead_mut().load(b"colorblue", &[5,9]).unwrap();
+        g0.push_rec();
+        g0.look_ahead_mut().load(b"colorgreen", &[5,10]).unwrap();
+        g0.push_rec();
+
+        g1.look_ahead_mut().load(b"colorred", &[5,8]).unwrap();
+        g1.push_rec();
+
+        assert_eq!(g0.cmp_keys(&g1), Ordering::Equal);
+    }
+
+    #[test]
+    fn group_cmp_keys_less() {
+        let r0 = RecordBuilder::default().build().unwrap();
+        let mut g0 = GroupBuilder::default().from_record(r0);
+
+        let r1 = RecordBuilder::default().build().unwrap();
+        let mut g1 = GroupBuilder::default().from_record(r1);
+
+        g0.look_ahead_mut().load(b"colorblue", &[5,9]).unwrap();
+        g0.push_rec();
+        g0.look_ahead_mut().load(b"colorgreen", &[5,10]).unwrap();
+        g0.push_rec();
+
+        g1.look_ahead_mut().load(b"shapecircle", &[5,11]).unwrap();
+        g1.push_rec();
+
+        assert_eq!(g0.cmp_keys(&g1), Ordering::Less);
+    }
+
+    #[test]
+    fn group_cmp_keys_greater() {
+        let r0 = RecordBuilder::default().build().unwrap();
+        let mut g0 = GroupBuilder::default().from_record(r0);
+
+        let r1 = RecordBuilder::default().build().unwrap();
+        let mut g1 = GroupBuilder::default().from_record(r1);
+
+
+        g0.look_ahead_mut().load(b"shapecircle", &[5,11]).unwrap();
+        g0.push_rec();
+
+        g1.look_ahead_mut().load(b"colorblue", &[5,9]).unwrap();
+        g1.push_rec();
+        g1.look_ahead_mut().load(b"colorgreen", &[5,10]).unwrap();
+        g1.push_rec();
+
+        assert_eq!(g0.cmp_keys(&g1), Ordering::Greater);
     }
 }
 

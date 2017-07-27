@@ -5,3 +5,4 @@ authors = ["Milan Opath <milan.opath@gmail.com>"]
 
 [dependencies]
 csv-core = "*"
+clap = "*"

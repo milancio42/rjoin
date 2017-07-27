@@ -1,6 +1,6 @@
-use super::record::Group;
+use super::record::{Record, Group};
 use super::reader::Reader;
-use super::printer::Print;
+use super::printer::{PrintRecord, PrintGroup};
 use std::io;
 use std::cmp::Ordering::{Less, Greater, Equal};
 use std::error::Error;
@@ -9,6 +9,16 @@ pub struct JoinOptions {
     show_left: bool,
     show_right: bool,
     show_both: bool,
+}
+
+impl JoinOptions {
+    pub fn new(show_left: bool, show_right: bool, show_both: bool) -> Self {
+        JoinOptions {
+            show_left: show_left,
+            show_right: show_right,
+            show_both: show_both,
+        }
+    }
 }
 
 pub fn join<R0,R1,W,P>(
@@ -23,7 +33,7 @@ pub fn join<R0,R1,W,P>(
     where R0: io::Read,
           R1: io::Read,
           W: io::Write,
-          P: Print<W>,
+          P: PrintGroup<W>,
 {
     let mut ord = Equal;
     let mut l = true;
@@ -80,6 +90,34 @@ pub fn join<R0,R1,W,P>(
     }
 }
                 
+pub fn header<R0,R1,W,P>(
+    rdr0: &mut Reader<R0>,
+    rdr1: &mut Reader<R1>,
+    r0: &mut Record,
+    r1: &mut Record,
+    w: &mut W,
+    mut p: P,
+) -> Result<bool, Box<Error>>
+    where R0: io::Read,
+          R1: io::Read,
+          W: io::Write,
+          P: PrintRecord<W>,
+{
+    let l = rdr0.read_record(r0)?;
+    let r = rdr1.read_record(r1)?;
+
+    match (l, r) {
+        (true, true) => p.print_both(w, r0, r1)?,
+        (true, false) => p.print_left(w, r0)?,
+        (false, true) => p.print_right(w, r1)?,
+        (false, false) => return Ok(false),
+    }
+    Ok(true)
+}
+
+
+
+
 #[cfg(test)]
 mod tests {
     use super::{JoinOptions, join};

@@ -1,13 +1,20 @@
-use record::{Group, RecIter};
+use record::{Group, Record, RecIter};
 use std::io;
 use std::error::Error;
 
-pub trait Print<W:io::Write> {
+pub trait PrintGroup<W:io::Write> {
     fn print_left(&mut self, w: &mut W, g: &Group) -> Result<(), Box<Error>>;
     fn print_right(&mut self, w: &mut W, g: &Group) -> Result<(), Box<Error>>;
     fn print_both(&mut self, w: &mut W, g0: &Group, g1: &Group) -> Result<(), Box<Error>>;
 }
 
+pub trait PrintRecord<W:io::Write> {
+    fn print_left(&mut self, w: &mut W, r: &Record) -> Result<(), Box<Error>>;
+    fn print_right(&mut self, w: &mut W, r: &Record) -> Result<(), Box<Error>>;
+    fn print_both(&mut self, w: &mut W, r0: &Record, r1: &Record) -> Result<(), Box<Error>>;
+}
+
+#[derive(Clone, Copy)]
 pub struct KeyFirst {
     delimiter: u8,
     terminator: u8,
@@ -31,15 +38,15 @@ impl KeyFirst {
     }
 }
 
-impl<W:io::Write> Print<W> for KeyFirst {
+impl<W:io::Write> PrintGroup<W> for KeyFirst {
     #[inline]
     fn print_left(&mut self, w: &mut W, g: &Group) -> Result<(), Box<Error>> {
-        print_single(w, g, self.delimiter, self.terminator)
+        print_single_group(w, g, self.delimiter, self.terminator)
     }
         
     #[inline]
     fn print_right(&mut self, w: &mut W, g: &Group) -> Result<(), Box<Error>> {
-        print_single(w, g, self.delimiter, self.terminator)
+        print_single_group(w, g, self.delimiter, self.terminator)
     }
         
     #[inline]
@@ -65,15 +72,51 @@ impl<W:io::Write> Print<W> for KeyFirst {
                     w.write_all(&[self.delimiter])?;
                     w.write_all(f)?;
                 }
+                w.write_all(&[self.terminator])?;
             }
-            w.write_all(&[self.terminator])?;
         }
         Ok(())
     }
 }
         
+impl<W:io::Write> PrintRecord<W> for KeyFirst {
+    #[inline]
+    fn print_left(&mut self, w: &mut W, r: &Record) -> Result<(), Box<Error>> {
+        print_single_rec(w, r, self.delimiter, self.terminator)
+    }
+        
+    #[inline]
+    fn print_right(&mut self, w: &mut W, r: &Record) -> Result<(), Box<Error>> {
+        print_single_rec(w, r, self.delimiter, self.terminator)
+    }
+        
+    #[inline]
+    fn print_both(&mut self, w: &mut W, r0: &Record, r1: &Record) -> Result<(), Box<Error>> {
+        let mut is_first = true;
+        
+        for f in r0.key_iter() {
+            if !is_first {
+                w.write_all(&[self.delimiter])?;
+            } else {
+                is_first = false;
+            }
+            w.write_all(f)?;
+        }
+        for f in r0.non_key_iter() {
+            w.write_all(&[self.delimiter])?;
+            w.write_all(f)?;
+        }
+        for f in r1.non_key_iter() {
+            w.write_all(&[self.delimiter])?;
+            w.write_all(f)?;
+        }
+        w.write_all(&[self.terminator])?;
+        Ok(())
+    }
+}
     
-fn print_single<W:io::Write>(
+#[inline]
+fn print_single_group<W:io::Write>(
     w: &mut W,
     g: &Group,
     delimiter: u8,
@@ -97,5 +140,30 @@ fn print_single<W:io::Write>(
         }
         w.write_all(&[terminator])?;
     }
+    Ok(())
+}
+
+#[inline]
+fn print_single_rec<W:io::Write>(
+    w: &mut W,
+    r: &Record,
+    delimiter: u8,
+    terminator: u8,
+) -> Result<(), Box<Error>> {
+    let mut is_first = true;
+        
+    for f in r.key_iter() {
+        if !is_first {
+            w.write_all(&[delimiter])?;
+        } else {
+            is_first = false;
+        }
+        w.write_all(f)?;
+    }
+    for f in r.non_key_iter() {
+        w.write_all(&[delimiter])?;
+        w.write_all(f)?;
+    }
+    w.write_all(&[terminator])?;
     Ok(())
 }

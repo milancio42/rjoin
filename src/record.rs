@@ -2,7 +2,7 @@ use std::cmp;
 use std::error::Error;
 use std::ops::Range;
 
-/// Configres and builds a Record.
+/// Configures and builds a Record.
 pub struct RecordBuilder {
     capacity: usize,
     key_idx: Result<Vec<usize>, Box<Error>>,
@@ -20,11 +20,13 @@ impl Default for RecordBuilder {
 }
 
 impl RecordBuilder {
+    /// Configure the capacity of the Record's internal buffers.
     pub fn capacity(mut self, cap: usize) -> Self {
         self.capacity = cap;
         self
     }
 
+    /// Configure which fields constitue the key.
     pub fn keys(mut self, k: &[usize]) -> Self {
         let key_idx: Vec<usize> = k.into();
         let mut key_idx_asc: Vec<usize> = key_idx.clone();
@@ -44,6 +46,30 @@ impl RecordBuilder {
         self
     }
 
+    /// Build the configured Record.
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().capacity(8 * (1<<10))
+    ///                                         .keys(&[1,0][..])
+    ///                                         .build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///     
+    ///     assert_eq!(r.get_field(0), Some(&b"foo"[..]));
+    ///     assert_eq!(r.get_key_field(0), Some(&b"bar"[..]));
+    ///     assert_eq!(r.get_non_key_field(0), Some(&b"quux"[..]));
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn build(self) -> Result<Record, Box<Error>> {
         let key_idx = self.key_idx?; 
         let key_idx_asc = self.key_idx_asc?; 
@@ -63,21 +89,33 @@ impl RecordBuilder {
     }
 }
 
+/// A single record stored as bytes.
+///
+/// The Record contains key fields, which are used to compare it to another Record during join.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Record {
+    /// All fields in this record, stored contiguously.
     fields: Vec<u8>,
+    /// The ending positions of the fields.
     fields_bounds: Bounds,
+    /// The fields costituing the key.
     key_fields: Vec<u8>,
+    /// The ending positions of the key fields.
     key_fields_bounds: Bounds,
+    /// The remaining fields which are not part of the key.
     non_key_fields: Vec<u8>,
+    /// The ending positions of the non-key fields.
     non_key_fields_bounds: Bounds,
-    // field numbers composing the key in the original order
+    /// The key fields numbers in the original order. 
     key_idx: Vec<usize>,
-    // field numbers composing the key sorted in ascending order
+    /// The key fields numbers sorder in the ascending order. 
     key_idx_asc: Vec<usize>,
 }
 
 impl Record {
+    /// Load this record from the separate parts - fields and ends.
+    ///
+    /// See [`RecordBuilder.build()`](struct.RecordBuilder.html#method.build) for an example.
     #[inline]
     pub fn load(&mut self, fields: &[u8], ends: &[usize]) -> Result<(), Box<Error>> {
         self.clear();
@@ -88,27 +126,64 @@ impl Record {
         Ok(())
     }
 
+    /// Retrieve the mutable fields parts of this record.
+    ///
+    /// **Note:** after modifying the internal parts of this record, it is mandatory to run
+    /// [`set_len`](struct.Record.html#method.set_len), 
+    /// [`set_key_fields`](struct.Record.html#method.set_key_fields) and
+    /// [`set_non_key_fields`](struct.Record.html#method.set_non_key_fields) in order to keep this
+    /// record internally consistent.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.expand_fields();
+    ///     r.expand_bounds();
+    ///     {
+    ///         let (mut fields, mut ends) = r.fields_mut();
+    ///         fields[..3].copy_from_slice(b"abc");
+    ///         ends[..3].copy_from_slice(&[1,2,3]);
+    ///     }
+    ///     r.set_len(3);
+    ///     r.set_key_fields();
+    ///     r.set_non_key_fields();
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn fields_mut(&mut self) -> (&mut [u8], &mut [usize]) {
         (&mut self.fields, &mut self.fields_bounds.ends)
     }
 
+    /// Expand the capacity for storing fields.
     #[inline]
     pub fn expand_fields(&mut self) {
         let new_len = self.fields.len().checked_mul(2).unwrap();
         self.fields.resize(cmp::max(4, new_len), 0);
     }
 
+    /// Expand the capacity for storing fields positions.
     #[inline]
     pub fn expand_bounds(&mut self) {
         self.fields_bounds.expand();
     }
 
+    /// Set the number of fields in this record.
     #[inline]
     pub fn set_len(&mut self, len: usize) {
         self.fields_bounds.ends.resize(len, 0);
     }
 
+    /// Clear this record so it can be reused.
     #[inline]
     pub fn clear(&mut self) {
         self.fields.clear();
@@ -119,21 +194,90 @@ impl Record {
         self.non_key_fields_bounds.clear();
     }
 
+    /// Return the field at the index `i`.
+    ///
+    /// If there is no field at the index `i`, the function returns `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///     
+    ///     assert_eq!(r.get_field(1), Some(&b"bar"[..]));
+    ///     assert_eq!(r.get_field(3), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_field(&self, i: usize) -> Option<&[u8]> {
         self.fields_bounds.get(i).map(|r| &self.fields[r])
     }
         
+    /// Return the key field at the index `i`.
+    ///
+    /// If there is no key field at the index `i`, the function returns `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///     
+    ///     // by default, the first field constitues the key
+    ///     assert_eq!(r.get_key_field(0), Some(&b"foo"[..]));
+    ///     assert_eq!(r.get_key_field(1), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_key_field(&self, i: usize) -> Option<&[u8]> {
         self.key_fields_bounds.get(i).map(|r| &self.key_fields[r])
     }
         
+    /// Return the non-key field at the index `i`.
+    ///
+    /// If there is no non-key field at the index `i`, the function returns `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///     
+    ///     // by default, the first field constitues the key
+    ///     assert_eq!(r.get_non_key_field(0), Some(&b"bar"[..]));
+    ///     assert_eq!(r.get_non_key_field(2), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_non_key_field(&self, i: usize) -> Option<&[u8]> {
         self.non_key_fields_bounds.get(i).map(|r| &self.non_key_fields[r])
     }
 
+    /// Extract the key fields from all the fields in this record and store them.
     #[inline]
     pub fn set_key_fields(&mut self) -> Result<(), Box<Error>> {
         let mut end_last = 0;
@@ -152,6 +296,7 @@ impl Record {
         Ok(())
     }
 
+    /// Extract the non-key fields from all the fields in this record and store them.
     #[inline]
     pub fn set_non_key_fields(&mut self) -> Result<(), Box<Error>> {
         let mut fe_last = 0;
@@ -186,6 +331,30 @@ impl Record {
         Ok(())
     }
 
+    /// Create an iterator over all the fields in this record.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///
+    ///     let mut r_it = r.iter();
+    ///
+    ///     assert_eq!(r_it.next().unwrap(), &b"foo"[..]);
+    ///     assert_eq!(r_it.next().unwrap(), &b"bar"[..]);
+    ///     assert_eq!(r_it.next().unwrap(), &b"quux"[..]);
+    ///     assert_eq!(r_it.next(), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn iter<'r>(&'r self) -> RecIter<'r> {
         RecIter {
@@ -196,6 +365,28 @@ impl Record {
         }
     }
 
+    /// Create an iterator over the key fields in this record.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///
+    ///     let mut r_it = r.key_iter();
+    ///
+    ///     assert_eq!(r_it.next().unwrap(), &b"foo"[..]);
+    ///     assert_eq!(r_it.next(), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn key_iter<'r>(&'r self) -> RecIter<'r> {
         RecIter {
@@ -206,6 +397,29 @@ impl Record {
         }
     }
 
+    /// Create an iterator over the non-key fields in this record.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let mut r = RecordBuilder::default().build()?;
+    ///     r.load(b"foobarquux", &[3,6,10])?;
+    ///
+    ///     let mut r_it = r.non_key_iter();
+    ///
+    ///     assert_eq!(r_it.next().unwrap(), &b"bar"[..]);
+    ///     assert_eq!(r_it.next().unwrap(), &b"quux"[..]);
+    ///     assert_eq!(r_it.next(), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn non_key_iter<'r>(&'r self) -> RecIter<'r> {
         RecIter {
@@ -217,13 +431,15 @@ impl Record {
     }
 }
 
-
+/// The Bounds of fields in a single record.
 #[derive(Debug, Eq, PartialEq)]
 struct Bounds {
+    /// The ending position of each field.
     ends: Vec<usize>,
 }
 
 impl Bounds {
+    /// Create the new set of bounds with the given capacity.
     #[inline]
     pub fn with_capacity(cap: usize) -> Self {
         Bounds {
@@ -253,6 +469,7 @@ impl Bounds {
     }
 }
 
+/// Configures and builds a Group of records.
 pub struct GroupBuilder {
     capacity: usize,
 }
@@ -266,12 +483,39 @@ impl Default for GroupBuilder {
 }
 
 impl GroupBuilder {
+    /// Configure the capacity of the Gecord's internal buffers.
     pub fn capacity(mut self, cap: usize) -> Self {
         self.capacity = cap;
         self
     }
 
 
+    /// Build the configured Gecord from the given Record.
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let r = RecordBuilder::default().build()?;
+    ///     let mut g = GroupBuilder::default().from_record(r);
+    ///
+    ///     g.look_ahead_mut().load(b"foobarquux", &[3,6,10]).unwrap();
+    ///     g.push_rec();
+    ///     g.look_ahead_mut().load(b"foofortytwo", &[3,8,11]).unwrap();
+    ///     g.push_rec();
+    ///     
+    ///     assert_eq!(g.get_field(0, 0), Some(&b"foo"[..]));
+    ///     assert_eq!(g.get_field(1, 1), Some(&b"forty"[..]));
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn from_record(self, rec: Record) -> Group {
         Group {
             look_ahead: rec,
@@ -283,28 +527,45 @@ impl GroupBuilder {
             non_key_fields: Vec::with_capacity(self.capacity),
             non_key_fields_bounds: Bounds::with_capacity(self.capacity),
             non_key_recs: Bounds::with_capacity(self.capacity),
-            is_fused: false,
-            is_first: true,
         }
     }
 }
 
+/// A group of records stored as bytes.
+///
+/// The Group contains key fields of the first record, which are used to compare it to another
+/// Group during join.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Group {
+    /// A look-ahead Record.
     look_ahead: Record,
+    /// All fields in this group, stored contiguously.
+    /// Example: `[a00a11]` represents two records: `['a', '0', '0']` and `['a', '1', '1']`.
     fields: Vec<u8>,
+    /// The ending positions of the fields. They are copied from the look_ahead record without
+    /// offsetting the positions for multiple records. Instead, we add the offset as the first element
+    /// of each of record's bounds.
+    /// Example: `[01233123]`, where the first `0` and the fifth `3` elements are offsets of fields.
     fields_bounds: Bounds,
+    /// The ending positions of the records in fields_bounds. This includes also the offsets.
+    /// Example: `[4, 8]`
     recs: Bounds,
+    /// The fields constituing the key. Since the group contains only records
+    /// having the same key, we store only the first one.
     first_key_fields: Vec<u8>,
+    /// The ending positions of the key fields.
     first_key_fields_bounds: Bounds,
+    /// The remaining fields which are not part of the key.
     non_key_fields: Vec<u8>,
+    /// The ending positions of the non-key fields. The same offsetting rule as for fields_bounds
+    /// is applied.
     non_key_fields_bounds: Bounds,
+    /// The positions of the records in non_key_fields_bounds.
     non_key_recs: Bounds,
-    is_fused: bool,
-    is_first: bool,
 }
 
 impl Group {
+    /// Clear this group so it can be reused.
     #[inline]
     pub fn clear(&mut self) {
         self.fields.clear();
@@ -317,26 +578,9 @@ impl Group {
         self.non_key_recs.clear();
     }
         
-    #[inline]
-    pub fn is_fused(&self) -> bool {
-        self.is_fused
-    }
-
-    #[inline]
-    pub fn fused(&mut self) {
-        self.is_fused = true;
-    }
-
-    #[inline]
-    pub fn is_first(&self) -> bool {
-        self.is_first
-    }
-
-    #[inline]
-    pub fn not_first(&mut self) {
-        self.is_first = false;
-    }
-
+    /// Push the look-ahead record to this group.
+    ///
+    /// [Example](struct.GroupBuilder.html#method.from_record).
     #[inline]
     pub fn push_rec(&mut self) {
         self.fields_bounds.ends.push(self.fields.len());
@@ -358,11 +602,35 @@ impl Group {
         self.non_key_recs.ends.push(self.non_key_fields_bounds.ends.len());
     }
 
+    /// Retrieve the mutable reference to the look-ahead record.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let r = RecordBuilder::default().build()?;
+    ///     let mut g = GroupBuilder::default().from_record(r);
+    ///
+    ///     g.look_ahead_mut().load(b"foobarquux", &[3,6,10]).unwrap();
+    ///     g.push_rec();
+    ///     g.look_ahead_mut().load(b"foofortytwo", &[3,8,11]).unwrap();
+    ///     g.push_rec();
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn look_ahead_mut(&mut self) -> &mut Record {
         &mut self.look_ahead
     }
 
+    /// Return true if the look-ahead record has the keys equal to the first_key_fields.
     #[inline]
     pub fn is_group(&self) -> Result<bool, Box<Error>> {
         match cmp_keys(&self.look_ahead.key_fields,
@@ -376,6 +644,38 @@ impl Group {
         }
     }
 
+    /// Compare the first_key_fields of this group to another's.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use std::cmp::Ordering;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let r0 = RecordBuilder::default().build()?;
+    ///     let mut g0 = GroupBuilder::default().from_record(r0);
+    ///
+    ///     let r1 = RecordBuilder::default().build()?;
+    ///     let mut g1 = GroupBuilder::default().from_record(r1);
+    ///
+    ///     g0.look_ahead_mut().load(b"colorblue", &[5,9])?;
+    ///     g0.push_rec();
+    ///     g0.look_ahead_mut().load(b"colorgreen", &[5,10])?;
+    ///     g0.push_rec();
+    ///
+    ///     g1.look_ahead_mut().load(b"colorred", &[5,8])?;
+    ///     g1.push_rec();
+    ///
+    ///     assert_eq!(g0.cmp_keys(&g1), Ordering::Equal);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn cmp_keys(&self, other: &Group) -> cmp::Ordering {
         cmp_keys(&self.first_key_fields,
@@ -384,17 +684,103 @@ impl Group {
                  &other.first_key_fields_bounds.ends)
     }
 
+    /// Return the field at the index `field_i` of the record `rec_i`.
+    ///
+    /// If there is no field at the index `field_i` or `rec_i`, the function returns `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let r = RecordBuilder::default().build()?;
+    ///     let mut g = GroupBuilder::default().from_record(r);
+    ///
+    ///     g.look_ahead_mut().load(b"foobarquux", &[3,6,10]).unwrap();
+    ///     g.push_rec();
+    ///     g.look_ahead_mut().load(b"foofortytwo", &[3,8,11]).unwrap();
+    ///     g.push_rec();
+    ///
+    ///     assert_eq!(g.get_field(0, 1), Some(&b"bar"[..]));
+    ///     assert_eq!(g.get_field(1, 2), Some(&b"two"[..]));
+    ///     assert_eq!(g.get_field(1, 3), None);
+    ///     assert_eq!(g.get_field(2, 0), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_field(&self, rec_i: usize, field_i: usize) -> Option<&[u8]> {
         self.recs.get(rec_i).and_then(|r| get_bound_offset(&self.fields_bounds.ends[r], field_i))
                             .map(|(o, r)| &self.fields[o..][r])
     }
 
+    /// Return the key field of the first record at the index `i`.
+    ///
+    /// If there is no field at the index `i`, the function returns `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let r = RecordBuilder::default().build()?;
+    ///     let mut g = GroupBuilder::default().from_record(r);
+    ///
+    ///     g.look_ahead_mut().load(b"foobarquux", &[3,6,10]).unwrap();
+    ///     g.push_rec();
+    ///     g.look_ahead_mut().load(b"foofortytwo", &[3,8,11]).unwrap();
+    ///     g.push_rec();
+    ///
+    ///     // by default, the first field is the key
+    ///     assert_eq!(g.get_first_key_field(0), Some(&b"foo"[..]));
+    ///     assert_eq!(g.get_first_key_field(1), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_first_key_field(&self, i: usize) -> Option<&[u8]> {
         self.first_key_fields_bounds.get(i).map(|r| &self.first_key_fields[r])
     }
 
+    /// Return the non-key field at the index `field_i` of the record `rec_i`.
+    ///
+    /// If there is no field at the index `field_i` or `rec_i`, the function returns `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let r = RecordBuilder::default().build()?;
+    ///     let mut g = GroupBuilder::default().from_record(r);
+    ///
+    ///     g.look_ahead_mut().load(b"foobarquux", &[3,6,10]).unwrap();
+    ///     g.push_rec();
+    ///     g.look_ahead_mut().load(b"foofortytwo", &[3,8,11]).unwrap();
+    ///     g.push_rec();
+    ///
+    ///     assert_eq!(g.get_non_key_field(0, 1), Some(&b"quux"[..]));
+    ///     assert_eq!(g.get_non_key_field(1, 0), Some(&b"forty"[..]));
+    ///     assert_eq!(g.get_non_key_field(1, 2), None);
+    ///     assert_eq!(g.get_non_key_field(2, 0), None);
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_non_key_field(&self, rec_i: usize, field_i: usize) -> Option<&[u8]> {
         self.non_key_recs.get(rec_i).and_then(|r| get_bound_offset(&self.non_key_fields_bounds
@@ -402,6 +788,35 @@ impl Group {
                             .map(|(o, r)| &self.non_key_fields[o..][r])
     }
 
+    /// Create an iterator over all the records in this group.
+    ///
+    /// This iterator yields a tuple of fields and their ending positions.
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///    let rec = RecordBuilder::default().build()?;
+    ///    let mut g = GroupBuilder::default().from_record(rec);
+    ///    
+    ///    g.look_ahead_mut().load(b"foobarquux", &[3,6,10])?;
+    ///    g.push_rec();
+    ///    g.look_ahead_mut().load(b"foofortytwo", &[3,8,11])?;
+    ///    g.push_rec();
+    ///
+    ///    let mut g_it = g.iter();
+    ///    assert_eq!(g_it.next().unwrap(), (&b"foobarquux"[..], &[3,6,10][..]));
+    ///    assert_eq!(g_it.next().unwrap(), (&b"foofortytwo"[..], &[3,8,11][..]));
+    ///    assert_eq!(g_it.next(), None);
+    ///    assert_eq!(g_it.next(), None);
+    ///    Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn iter<'g>(&'g self) -> GroupIter<'g> {
         GroupIter {
@@ -413,6 +828,33 @@ impl Group {
         }
     }
 
+    /// Create an iterator over the key fields of the first record in this group.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///    let rec = RecordBuilder::default().build()?;
+    ///    let mut g = GroupBuilder::default().from_record(rec);
+    ///    
+    ///    g.look_ahead_mut().load(b"foobarquux", &[3,6,10])?;
+    ///    g.push_rec();
+    ///    g.look_ahead_mut().load(b"foofortytwo", &[3,8,11])?;
+    ///    g.push_rec();
+    ///
+    ///    let mut g_it = g.first_key_iter();
+    ///
+    ///    assert_eq!(g_it.next().unwrap(), &b"foo"[..]);
+    ///    assert_eq!(g_it.next(), None);
+    ///    Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn first_key_iter<'r>(&'r self) -> RecIter<'r> {
         RecIter {
@@ -423,6 +865,34 @@ impl Group {
         }
     }
 
+    /// Create an iterator over all the records in this group.
+    ///
+    /// This iterator yields a tuple of non-key fields and their ending positions.
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<Error>> {
+    ///    let rec = RecordBuilder::default().build()?;
+    ///    let mut g = GroupBuilder::default().from_record(rec);
+    ///    
+    ///    g.look_ahead_mut().load(b"foobarquux", &[3,6,10])?;
+    ///    g.push_rec();
+    ///    g.look_ahead_mut().load(b"foofortytwo", &[3,8,11])?;
+    ///    g.push_rec();
+    ///
+    ///    let mut g_it = g.non_key_iter();
+    ///    assert_eq!(g_it.next().unwrap(), (&b"barquux"[..], &[3,7][..]));
+    ///    assert_eq!(g_it.next().unwrap(), (&b"fortytwo"[..], &[5,8][..]));
+    ///    assert_eq!(g_it.next(), None);
+    ///    Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn non_key_iter<'g>(&'g self) -> GroupIter<'g> {
         GroupIter {
@@ -502,14 +972,24 @@ fn cmp_keys(
     Equal
 }
 
+/// An iterator over the fields in a record.
+///
+/// The `'r` lifetime refers to the lifetime of the `Record` that is being iterated over.
 pub struct RecIter<'r> {
+    /// The fields.
     f: &'r [u8],
+    /// The fields_ends.
     fe: &'r [usize],
+    /// The ending index of the previous field.
     end_last: usize,
+    /// The index of iteration.
     i: usize,
 }
 
 impl<'r> RecIter<'r> {
+    /// Create the iterator from fields and fields_ends.
+    ///
+    /// This is convenient when combined with the [`GroupIter`](struct.GroupIter.html).
     #[inline]
     pub fn from_fields(fields: &'r [u8], ends: &'r [usize]) -> Self {
         RecIter {
@@ -538,6 +1018,9 @@ impl<'r> Iterator for RecIter<'r> {
     }
 }
 
+/// An iterator over the records in a group.
+///
+/// The `'g` lifetime refers to the lifetime of the `Group` that is being iterated over.
 pub struct GroupIter<'g> {
     f: &'g [u8],
     fe: &'g [usize],

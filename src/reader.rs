@@ -38,7 +38,7 @@ impl ReaderBuilder {
         Reader {
             core: Box::new(self.core_builder.build()),
             rdr: io::BufReader::with_capacity(self.buffer_cap, rdr),
-            state: ReaderState { eof: false },
+            state: ReaderState { eof: false, group_is_first: true, group_is_fused: false },
         }
     }
 }
@@ -52,6 +52,8 @@ pub struct Reader<R> {
 struct ReaderState {
     // reached EOF of the underlying reader 
     eof: bool,
+    group_is_first: bool,
+    group_is_fused: bool,
 }
 
 impl<R: io::Read> Reader<R> {
@@ -104,15 +106,15 @@ impl<R: io::Read> Reader<R> {
         &mut self, 
         group: &mut Group,
     ) -> Result<bool, Box<Error>> {
-        if group.is_fused() {
+        if self.state.group_is_fused {
             return Ok(false);
         }
         group.clear();
-        if group.is_first() {
+        if self.state.group_is_first {
             if self.read_record(group.look_ahead_mut())? {
-                group.not_first();
+                self.state.group_is_first = false;
             } else {
-                group.fused();
+                self.state.group_is_fused = true;
                 return Ok(false);
             }
         }
@@ -125,7 +127,7 @@ impl<R: io::Read> Reader<R> {
                     return Ok(true);
                 }
             } else {
-                group.fused();
+                self.state.group_is_fused = true;
                 return Ok(true);
             }
         }

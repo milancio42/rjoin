@@ -2,10 +2,9 @@ use std::cmp;
 use std::error::Error;
 use std::ops::Range;
 
+/// Configres and builds a Record.
 pub struct RecordBuilder {
-    fields_cap: usize,
-    key_fields_cap: usize,
-    non_key_fields_cap: usize,
+    capacity: usize,
     key_idx: Result<Vec<usize>, Box<Error>>,
     key_idx_asc: Result<Vec<usize>, Box<Error>>,
 }
@@ -13,9 +12,7 @@ pub struct RecordBuilder {
 impl Default for RecordBuilder {
     fn default() -> Self {
         RecordBuilder {
-            fields_cap: 0,
-            key_fields_cap: 0,
-            non_key_fields_cap: 0,
+            capacity: 0,
             key_idx: Ok(vec![0]),
             key_idx_asc: Ok(vec![0]),
         }
@@ -23,18 +20,8 @@ impl Default for RecordBuilder {
 }
 
 impl RecordBuilder {
-    pub fn fields_cap(mut self, cap: usize) -> Self {
-        self.fields_cap = cap;
-        self
-    }
-
-    pub fn key_fields_cap(mut self, cap: usize) -> Self {
-        self.key_fields_cap = cap;
-        self
-    }
-
-    pub fn non_key_fields_cap(mut self, cap: usize) -> Self {
-        self.non_key_fields_cap = cap;
+    pub fn capacity(mut self, cap: usize) -> Self {
+        self.capacity = cap;
         self
     }
 
@@ -61,12 +48,12 @@ impl RecordBuilder {
         let key_idx = self.key_idx?; 
         let key_idx_asc = self.key_idx_asc?; 
         let r = Record {
-            fields: Vec::with_capacity(self.fields_cap),
-            fields_bounds: Bounds::with_capacity(self.fields_cap),
-            key_fields: Vec::with_capacity(self.key_fields_cap),
-            key_fields_bounds: Bounds::with_capacity(self.key_fields_cap),
-            non_key_fields: Vec::with_capacity(self.non_key_fields_cap),
-            non_key_fields_bounds: Bounds::with_capacity(self.non_key_fields_cap),
+            fields: Vec::with_capacity(self.capacity),
+            fields_bounds: Bounds::with_capacity(self.capacity),
+            key_fields: Vec::with_capacity(self.capacity),
+            key_fields_bounds: Bounds::with_capacity(self.capacity),
+            non_key_fields: Vec::with_capacity(self.capacity),
+            non_key_fields_bounds: Bounds::with_capacity(self.capacity),
             // field numbers composing the key in the original order
             key_idx: key_idx,
             // field numbers composing the key sorted in ascending order
@@ -267,48 +254,35 @@ impl Bounds {
 }
 
 pub struct GroupBuilder {
-    fields_cap: usize,
-    first_key_fields_cap: usize,
-    non_key_fields_cap: usize,
+    capacity: usize,
 }
 
 impl Default for GroupBuilder {
     fn default() -> Self {
         GroupBuilder {
-            fields_cap: 0,
-            first_key_fields_cap: 0,
-            non_key_fields_cap: 0,
+            capacity: 0,
         }
     }
 }
 
 impl GroupBuilder {
-    pub fn fields_cap(mut self, cap: usize) -> Self {
-        self.fields_cap = cap;
+    pub fn capacity(mut self, cap: usize) -> Self {
+        self.capacity = cap;
         self
     }
 
-    pub fn first_key_fields_cap(mut self, cap: usize) -> Self {
-        self.first_key_fields_cap = cap;
-        self
-    }
-
-    pub fn non_key_fields_cap(mut self, cap: usize) -> Self {
-        self.non_key_fields_cap = cap;
-        self
-    }
 
     pub fn from_record(self, rec: Record) -> Group {
         Group {
             look_ahead: rec,
-            fields: Vec::with_capacity(self.fields_cap),
-            fields_bounds: Bounds::with_capacity(self.fields_cap),
-            recs: Bounds::with_capacity(self.fields_cap),
-            first_key_fields: Vec::with_capacity(self.first_key_fields_cap),
-            first_key_fields_bounds: Bounds::with_capacity(self.first_key_fields_cap),
-            non_key_fields: Vec::with_capacity(self.non_key_fields_cap),
-            non_key_fields_bounds: Bounds::with_capacity(self.non_key_fields_cap),
-            non_key_recs: Bounds::with_capacity(self.non_key_fields_cap),
+            fields: Vec::with_capacity(self.capacity),
+            fields_bounds: Bounds::with_capacity(self.capacity),
+            recs: Bounds::with_capacity(self.capacity),
+            first_key_fields: Vec::with_capacity(self.capacity),
+            first_key_fields_bounds: Bounds::with_capacity(self.capacity),
+            non_key_fields: Vec::with_capacity(self.capacity),
+            non_key_fields_bounds: Bounds::with_capacity(self.capacity),
+            non_key_recs: Bounds::with_capacity(self.capacity),
             is_fused: false,
             is_first: true,
         }
@@ -536,6 +510,7 @@ pub struct RecIter<'r> {
 }
 
 impl<'r> RecIter<'r> {
+    #[inline]
     pub fn from_fields(fields: &'r [u8], ends: &'r [usize]) -> Self {
         RecIter {
             f: fields,

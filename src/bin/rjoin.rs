@@ -38,13 +38,9 @@ fn run(args: Args) -> Result<(), Box<Error>> {
                                            .terminator(Terminator::Any(args.in_left_terminator()))
                                            .from_reader(file1);
 
-    let mut rec0 = RecordBuilder::default().fields_cap(8 * (1<<10))
-                                           .key_fields_cap(8 * (1<<10))
-                                           .non_key_fields_cap(8 * (1<<10))
+    let mut rec0 = RecordBuilder::default().capacity(8 * (1<<10))
                                            .build()?;
-    let mut rec1 = RecordBuilder::default().fields_cap(8 * (1<<10))
-                                           .key_fields_cap(8 * (1<<10))
-                                           .non_key_fields_cap(8 * (1<<10))
+    let mut rec1 = RecordBuilder::default().capacity(8 * (1<<10))
                                            .build()?;
 
     let printer = KeyFirst::new(args.out_delimiter(), args.out_terminator());
@@ -58,14 +54,10 @@ fn run(args: Args) -> Result<(), Box<Error>> {
     rec0.clear();
     rec1.clear();
         
-    let mut g0 = GroupBuilder::default().fields_cap(8 * (1<<10))
-                                        .first_key_fields_cap(8 * (1<<10))
-                                        .non_key_fields_cap(8 * (1<<10))
+    let mut g0 = GroupBuilder::default().capacity(8 * (1<<10))
                                         .from_record(rec0);
     
-    let mut g1 = GroupBuilder::default().fields_cap(8 * (1<<10))
-                                        .first_key_fields_cap(8 * (1<<10))
-                                        .non_key_fields_cap(8 * (1<<10))
+    let mut g1 = GroupBuilder::default().capacity(8 * (1<<10))
                                         .from_record(rec1);
     let _ = join(&mut rdr0, &mut rdr1, &mut g0, &mut g1, &mut out, printer, opts)?;
     Ok(())

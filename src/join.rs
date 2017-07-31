@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn inner_join_0() {
         let data0 = "color,red\ncolor,green\ncolor,blue\nshape,circle\nshape,square";
-        let data1 = "color,orange\nsize,small\nsize,large";
+        let data1 = "color,orange\ncolor,purple\nsize,small\nsize,large";
 
         let mut rdr0 = ReaderBuilder::default().from_reader(data0.as_bytes());
         let mut rdr1 = ReaderBuilder::default().from_reader(data1.as_bytes());
@@ -151,7 +151,9 @@ mod tests {
         let mut out: Vec<u8> = Vec::new();
         let _ = join(&mut rdr0, &mut rdr1, &mut g0, &mut g1, &mut out, p, opts).unwrap();
 
-        assert_eq!(&out[..], &b"color,red,orange\ncolor,green,orange\ncolor,blue,orange\n"[..]); 
+        assert_eq!(&out[..], &b"color,red,orange\ncolor,red,purple\n\
+                                color,green,orange\ncolor,green,purple\n\
+                                color,blue,orange\ncolor,blue,purple\n"[..]); 
     }
 
     #[test]
@@ -293,6 +295,35 @@ mod tests {
 
         assert_eq!(&out[..], &b"size,small\nsize,large\n"[..]); 
     }
+
+    #[test]
+    fn full_outer_join_0() {
+        let data0 = "a,a,0\na,b,1";
+        let data1 = "a,b,2\na,c,3";
+
+        let mut rdr0 = ReaderBuilder::default().from_reader(data0.as_bytes());
+        let mut rdr1 = ReaderBuilder::default().from_reader(data1.as_bytes());
+
+        let rec0 = RecordBuilder::default().keys(&[1,0][..]).build().unwrap();
+        let rec1 = RecordBuilder::default().keys(&[1,0][..]).build().unwrap();
+
+        let mut g0 = GroupBuilder::default().from_record(rec0);
+        let mut g1 = GroupBuilder::default().from_record(rec1);
+
+        let p = KeyFirst::default();
+
+        let opts = JoinOptions {
+            show_left: true,
+            show_right: true,
+            show_both: true,
+        };
+
+        let mut out: Vec<u8> = Vec::new();
+        let _ = join(&mut rdr0, &mut rdr1, &mut g0, &mut g1, &mut out, p, opts).unwrap();
+
+        assert_eq!(&out[..], &b"a,a,0\nb,a,1,2\nc,a,3\n"[..]); 
+    }
+
 }
          
         

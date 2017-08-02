@@ -4,8 +4,11 @@ use std::ops::Range;
 
 /// Configures and builds a Record.
 pub struct RecordBuilder {
+    /// The capacity of the record's internal buffers
     capacity: usize,
+    /// The key fields numbers in the original order. 
     key_idx: Result<Vec<usize>, Box<Error>>,
+    /// The key fields numbers sorted in the ascending order. 
     key_idx_asc: Result<Vec<usize>, Box<Error>>,
 }
 
@@ -108,7 +111,7 @@ pub struct Record {
     non_key_fields_bounds: Bounds,
     /// The key fields numbers in the original order. 
     key_idx: Vec<usize>,
-    /// The key fields numbers sorder in the ascending order. 
+    /// The key fields numbers sorted in the ascending order. 
     key_idx_asc: Vec<usize>,
 }
 

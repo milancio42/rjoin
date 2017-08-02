@@ -4,7 +4,9 @@ use super::csv_core;
 use std::io::{self, BufRead};
 use std::error::Error;
 
+/// Configures and builds a Reader.
 pub struct ReaderBuilder {
+    /// The capacity of the readers's internal buffer
     buffer_cap: usize,
     core_builder: Box<csv_core::ReaderBuilder>,
 }
@@ -19,21 +21,25 @@ impl Default for ReaderBuilder {
 }
 
 impl ReaderBuilder {
+    /// The field delimiter to use when parsing CSV.
     pub fn delimiter(mut self, del: u8) -> Self {
         self.core_builder.delimiter(del);
         self
     }
     
+    /// The record terminator to use when parsing CSV.
     pub fn terminator(mut self, term: csv_core::Terminator) -> Self {
         self.core_builder.terminator(term);
         self
     }
 
+    /// Set the capacity of the internal buffer.
     pub fn buffer_capacity(mut self, cap: usize) -> Self {
         self.buffer_cap = cap;
         self
     }
 
+    /// Build a CSV parser from `rdr`.
     pub fn from_reader<R: io::Read>(&self, rdr: R) -> Reader<R> {
         Reader {
             core: Box::new(self.core_builder.build()),
@@ -43,20 +49,58 @@ impl ReaderBuilder {
     }
 }
 
+/// A configured CSV reader.
 pub struct Reader<R> {
+    /// The underlying CSV parser.
     core: Box<csv_core::Reader>,
+    /// The underlying reader.
     rdr: io::BufReader<R>,
     state: ReaderState,
 }
 
 struct ReaderState {
-    // reached EOF of the underlying reader 
+    /// Whether the underyling reader reached EOF.
     eof: bool,
+    /// Whether we are parsing the first group.
     group_is_first: bool,
+    /// Whether we parsed all the groups.
     group_is_fused: bool,
 }
 
 impl<R: io::Read> Reader<R> {
+    /// Read a single row into a given record. Return `false` when no more records could be read.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::RecordBuilder;
+    /// use rjoin::reader::ReaderBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let data = "1,Aragorn,The Lord of the Rings\n2,Jon Snow,The Song of Ice and Fire";
+    ///     let mut rdr = ReaderBuilder::default().from_reader(data.as_bytes());
+    ///     let mut rec = RecordBuilder::default().build().unwrap();
+    ///
+    ///     let _ = rdr.read_record(&mut rec)?;
+    ///
+    ///     assert_eq!(rec.get_field(1), Some(&b"Aragorn"[..]));
+    ///     assert_eq!(rec.get_key_field(0), Some(&b"1"[..]));
+    ///     assert_eq!(rec.get_non_key_field(1), Some(&b"The Lord of the Rings"[..]));
+    ///
+    ///     let _ = rdr.read_record(&mut rec)?;
+    ///
+    ///     assert_eq!(rec.get_field(1), Some(&b"Jon Snow"[..]));
+    ///     assert_eq!(rec.get_key_field(0), Some(&b"2"[..]));
+    ///     assert_eq!(rec.get_non_key_field(1), Some(&b"The Song of Ice and Fire"[..]));
+    ///     Ok(())
+    /// }
+    /// ```
+    }
     #[inline]
     pub fn read_record(
         &mut self, 
@@ -102,6 +146,38 @@ impl<R: io::Read> Reader<R> {
         }
     }
 
+    /// Read a group of rows. Return `false` when no more group could be read.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// extern crate rjoin;
+    ///
+    /// use std::error::Error;
+    /// use rjoin::record::{RecordBuilder, GroupBuilder};
+    /// use rjoin::reader::ReaderBuilder;
+    ///
+    /// # fn main() { example().unwrap(); }
+    ///
+    /// fn example() -> Result<(), Box<Error>> {
+    ///     let data = "color,red\ncolor,green\ncolor,blue\nshape,circle\nshape,square";
+    ///     let mut rdr = ReaderBuilder::default().from_reader(data.as_bytes());
+    ///     let rec = RecordBuilder::default().build().unwrap();
+    ///     let mut g = GroupBuilder::default().from_record(rec);
+    ///     
+    ///     let _ = rdr.read_group(&mut g).unwrap();
+    ///     
+    ///     assert_eq!(g.get_field(0, 0), Some(&b"color"[..]));
+    ///     assert_eq!(g.get_field(0, 1), Some(&b"red"[..]));
+    ///     
+    ///     let _ = rdr.read_group(&mut g).unwrap();
+    ///     
+    ///     assert_eq!(g.get_field(0, 0), Some(&b"shape"[..]));
+    ///     assert_eq!(g.get_field(0, 1), Some(&b"circle"[..]));
+    ///     Ok(())
+    /// }
+    /// ```
+    }
     pub fn read_group(
         &mut self, 
         group: &mut Group,

@@ -12,14 +12,6 @@ use rjoin::reader::ReaderBuilder;
 use rjoin::printer::KeyFirst;
 use csv_core::Terminator;
 
-// stolen from BurntSushi's brilliant ripgrep crate
-macro_rules! eprintln {
-    ($($tt:tt)*) => {{
-        use std::io::Write;
-        let _ = writeln!(&mut ::std::io::stderr(), $($tt)*);
-    }}
-}
-
 fn main() {
     match Args::parse().and_then(run) {
         Ok(_) => {},
@@ -44,7 +36,7 @@ fn run(args: Args) -> Result<(), Box<Error>> {
                                            .build()?;
 
     let printer = KeyFirst::new(args.out_delimiter(), args.out_terminator());
-    let opts = JoinOptions::new(args.show_left(), args.show_right(), args.show_both());
+    let opts = JoinOptions::from_options(args.show_left(), args.show_right(), args.show_both());
     let mut out = io::BufWriter::new(io::stdout());
 
     if args.header() {

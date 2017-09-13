@@ -2,18 +2,28 @@ use record::{Group, Record, RecIter};
 use std::io;
 use std::error::Error;
 
+/// A trait for printing `Group`s in a desired format.
 pub trait PrintGroup<W:io::Write> {
+    /// Print the left group into `w`.
     fn print_left(&mut self, w: &mut W, g: &Group) -> Result<(), Box<Error>>;
+    /// Print the right group into `w`.
     fn print_right(&mut self, w: &mut W, g: &Group) -> Result<(), Box<Error>>;
+    /// Print both groups into `w`.
     fn print_both(&mut self, w: &mut W, g0: &Group, g1: &Group) -> Result<(), Box<Error>>;
 }
 
+/// A trait for printing `Record` in a desired format.
 pub trait PrintRecord<W:io::Write> {
+    /// Print the left record into `w`.
     fn print_left(&mut self, w: &mut W, r: &Record) -> Result<(), Box<Error>>;
+    /// Print the right record into `w`.
     fn print_right(&mut self, w: &mut W, r: &Record) -> Result<(), Box<Error>>;
+    /// Print both records into `w`.
     fn print_both(&mut self, w: &mut W, r0: &Record, r1: &Record) -> Result<(), Box<Error>>;
 }
 
+/// Print the records/groups in the following format: first the key fields followed by non-key
+/// fields.
 #[derive(Clone, Copy)]
 pub struct KeyFirst {
     delimiter: u8,

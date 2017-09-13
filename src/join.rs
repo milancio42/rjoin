@@ -5,14 +5,39 @@ use std::io;
 use std::cmp::Ordering::{Less, Greater, Equal};
 use std::error::Error;
 
+/// Options defining the output of the join.
+///
+/// For those familiar with SQL, you can tweak these to obtain:
+///   * INNER JOIN - `show_left: false`, `show_right: false`, `show_both: true`
+///   * LEFT OUTER JOIN - `show_left: true`, `show_right: false`, `show_both: true`
+///   * RIGHT OUTER JOIN - `show_left: false`, `show_right: true`, `show_both: true`
+///   * FULL OUTER JOIN - `show_left: true`, `show_right: true`, `show_both: true`
+///
+/// and even exclusive joins (outer joins without the inner part).
 pub struct JoinOptions {
     show_left: bool,
     show_right: bool,
     show_both: bool,
 }
 
+impl Default for JoinOptions {
+    fn default() -> Self {
+        JoinOptions {
+            show_left: false,
+            show_right: false,
+            show_both: true,
+        }
+    }
+}
+        
 impl JoinOptions {
-    pub fn new(show_left: bool, show_right: bool, show_both: bool) -> Self {
+    /// Create a new instance of `JoinOptions`. By default, only `show_both` is enabled. 
+    pub fn new() -> Self {
+        JoinOptions::default()
+    }
+
+    /// Create a new instance of `JoinOptions` with the specified options.
+    pub fn from_options(show_left: bool, show_right: bool, show_both: bool) -> Self {
         JoinOptions {
             show_left: show_left,
             show_right: show_right,
@@ -21,6 +46,43 @@ impl JoinOptions {
     }
 }
 
+/// Join the groups of records `g0` and `g1` parsed by CSV readers `rdr0` and `rdr1`. The output is
+/// written into `w` using the provided printer `p`. 
+/// # Example
+///
+/// ```
+/// extern crate rjoin;
+///
+/// use std::error::Error;
+/// use rjoin::record::{RecordBuilder, GroupBuilder};
+/// use rjoin::reader::ReaderBuilder;
+///
+/// # fn main() { example().unwrap(); }
+///
+/// fn example() -> Result<(), Box<Error>> {
+///     let data0 = "a,a,0\na,b,1";
+///     let data1 = "a,b,2\na,c,3";
+///
+///     let mut rdr0 = ReaderBuilder::default().from_reader(data0.as_bytes());
+///     let mut rdr1 = ReaderBuilder::default().from_reader(data1.as_bytes());
+///
+///     let rec0 = RecordBuilder::default().keys(&[1,0][..]).build()?;
+///     let rec1 = RecordBuilder::default().keys(&[1,0][..]).build()?;
+///
+///     let mut g0 = GroupBuilder::default().from_record(rec0);
+///     let mut g1 = GroupBuilder::default().from_record(rec1);
+///
+///     let p = KeyFirst::default();
+///
+///     // show all - equivalent to FULL OUTER JOIN in SQL
+///     let opts = JoinOptions::from_options(true, true, true);
+///     let mut out: Vec<u8> = Vec::new();
+///     let _ = join(&mut rdr0, &mut rdr1, &mut g0, &mut g1, &mut out, p, opts)?;
+///
+///     assert_eq!(&out[..], &b"a,a,0\nb,a,1,2\nc,a,3\n"[..]); 
+///     Ok(())
+/// }
+/// ```
 pub fn join<R0,R1,W,P>(
     rdr0: &mut Reader<R0>,
     rdr1: &mut Reader<R1>,
@@ -90,6 +152,7 @@ pub fn join<R0,R1,W,P>(
     }
 }
                 
+/// Print the first record of each reader, irrespective of a match.
 pub fn header<R0,R1,W,P>(
     rdr0: &mut Reader<R0>,
     rdr1: &mut Reader<R1>,

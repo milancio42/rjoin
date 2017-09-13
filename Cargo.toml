@@ -2,7 +2,20 @@
 name = "rjoin"
 version = "0.1.0"
 authors = ["Milan Opath <milan.opath@gmail.com>"]
+description = "A tool for joining CSV data on command line."
+documentation = "https://docs.rs/rjoin"
+homepage = "https://github.com/milancio42/rjoin"
+readme = "README.md"
+keywords = ["join"]
+categories = ["command-line-utilities", "text-processing"]
+license = "Unlicense/MIT"
+
 
 [dependencies]
-csv-core = "*"
-clap = "*"
+csv-core = "0.1.3"
+clap = "2.25.1"
+
+[[bin]]
+name = "rj"
+path = "src/bin/rjoin.rs"
+

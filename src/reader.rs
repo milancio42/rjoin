@@ -100,7 +100,6 @@ impl<R: io::Read> Reader<R> {
     ///     Ok(())
     /// }
     /// ```
-    }
     #[inline]
     pub fn read_record(
         &mut self, 
@@ -177,7 +176,6 @@ impl<R: io::Read> Reader<R> {
     ///     Ok(())
     /// }
     /// ```
-    }
     pub fn read_group(
         &mut self, 
         group: &mut Group,

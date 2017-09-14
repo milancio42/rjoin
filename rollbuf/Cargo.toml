@@ -1,0 +1,5 @@
+[package]
+name = "rollbuffer"
+version = "0.1.0"
+authors = ["Milan Opath <milan.opath@gmail.com>"]
+description = "An extendable buffer which rolls the last incomplete part to the beginning so it can be completed and consumed."

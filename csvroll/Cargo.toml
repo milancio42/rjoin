@@ -1,0 +1,8 @@
+[package]
+name = "csvroll"
+version = "0.1.0"
+authors = ["Milan Opath <milan.opath@gmail.com>"]
+description = "A low-level, non-FSM, zero-copy CSV parser."
+
+[dependencies]
+x86intrin = "0.4.3"

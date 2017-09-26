@@ -6,3 +6,4 @@ description = "A low-level, non-FSM, zero-copy CSV parser."
 
 [dependencies]
 x86intrin = "0.4.3"
+rollbuf = { path = "../rollbuf" }

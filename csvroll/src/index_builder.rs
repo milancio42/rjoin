@@ -1,34 +1,7 @@
 use super::avx;
 use super::bit;
+use super::parser::Index;
 use x86intrin::{m256i, mm256_cmpeq_epi8, mm256_movemask_epi8};
-
-use std::ops::Range;
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Index {
-    fields: Vec<Range<usize>>,
-    records: Vec<usize>,
-}
-
-impl Index {
-    pub fn fields(&self) -> &[Range<usize>] {
-        &self.fields[..]
-    }
-
-    pub fn records(&self) -> &[usize] {
-        &self.records[..]
-    }
-
-    #[inline]
-    pub fn push_field(&mut self, f: Range<usize>) {
-        self.fields.push(f);
-    }
-
-    #[inline]
-    pub fn push_record(&mut self, r: usize) {
-        self.records.push(r);
-    }
-}
 
 #[derive(Debug)]
 pub struct IndexBuilder {
@@ -424,14 +397,8 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
-                idx: Index {
-                    fields: vec![],
-                    records: vec![],
-                },
-                want: Index {
-                    fields: vec![0..64],
-                    records: vec![1],
-                },
+                idx: Index::from_parts(vec![], vec![]),
+                want: Index::from_parts(vec![0..64], vec![1]),
             },
             TestCase {
                 b_fs: vec![
@@ -442,14 +409,8 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
-                idx: Index {
-                    fields: vec![],
-                    records: vec![],
-                },
-                want: Index {
-                    fields: vec![0..7, 8..31, 32..55, 56..64],
-                    records: vec![4],
-                },
+                idx: Index::from_parts(vec![], vec![]),
+                want: Index::from_parts(vec![0..7, 8..31, 32..55, 56..64], vec![4]),
             },
             TestCase {
                 b_fs: vec![
@@ -460,14 +421,8 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
-                idx: Index {
-                    fields: vec![],
-                    records: vec![],
-                },
-                want: Index {
-                    fields: vec![0..7, 8..31, 32..39, 40..55, 56..64],
-                    records: vec![3, 5],
-                },
+                idx: Index::from_parts(vec![], vec![]),
+                want: Index::from_parts(vec![0..7, 8..31, 32..39, 40..55, 56..64], vec![3, 5]),
             },
             TestCase {
                 b_fs: vec![
@@ -480,14 +435,8 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
-                idx: Index {
-                    fields: vec![],
-                    records: vec![],
-                },
-                want: Index {
-                    fields: vec![0..7, 8..31, 32..55, 56..79, 80..87, 88..128],
-                    records: vec![4, 6],
-                },
+                idx: Index::from_parts(vec![], vec![]),
+                want: Index::from_parts(vec![0..7, 8..31, 32..55, 56..79, 80..87, 88..128], vec![4, 6]),
             },
             TestCase {
                 b_fs: vec![
@@ -500,14 +449,8 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 32,
-                idx: Index {
-                    fields: vec![],
-                    records: vec![],
-                },
-                want: Index {
-                    fields: vec![0..7, 8..31, 32..55, 56..79, 80..87, 88..96],
-                    records: vec![4, 6],
-                },
+                idx: Index::from_parts(vec![], vec![]),
+                want: Index::from_parts(vec![0..7, 8..31, 32..55, 56..79, 80..87, 88..96], vec![4, 6]),
             },
             TestCase {
                 b_fs: vec![
@@ -520,14 +463,10 @@ mod tests {
                 ],
                 buf_offset: 24,
                 appendix: 32,
-                idx: Index {
-                    fields: vec![0..15, 16..23],
-                    records: vec![2],
-                },
-                want: Index {
-                    fields: vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111, 112..120],
-                    records: vec![2, 6, 8],
-                },
+                idx: Index::from_parts(vec![0..15, 16..23], vec![2]),
+                want: Index::from_parts(
+                    vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111, 112..120],
+                    vec![2, 6, 8]),
             },
             TestCase {
                 b_fs: vec![
@@ -536,18 +475,14 @@ mod tests {
                 ],
                 b_rt: vec![
                     0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
-                    0b00000000_00000000_00000000_00000000_00000000_00000000_10000000_00000000,
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_11000000_00000000,
                 ],
                 buf_offset: 24,
                 appendix: 32,
-                idx: Index {
-                    fields: vec![0..15, 16..23],
-                    records: vec![2],
-                },
-                want: Index {
-                    fields: vec![0..15, 16..23, 24..30, 31..31, 32..55, 56..79, 80..103, 104..111, 112..120],
-                    records: vec![2, 7, 9],
-                },
+                idx: Index::from_parts(vec![0..15, 16..23], vec![2]),
+                want: Index::from_parts(
+                    vec![0..15, 16..23, 24..30, 31..31, 32..55, 56..79, 80..102, 103..103, 104..111, 112..120],
+                    vec![2, 7, 8, 10]),
             },
         ];
         for t in test_cases {

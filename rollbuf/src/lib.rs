@@ -6,7 +6,7 @@ const DAFAULT_BUF_SIZE: usize = 8 * 1024;
 
 pub trait RollBuf {
     fn fill_buf(&mut self) -> Result<&[u8], Box<Error>>;
-    fn consume(&mut self, amt: usize);
+    fn consume(&mut self, n: usize);
     fn roll(&mut self);
 }
 
@@ -53,8 +53,8 @@ impl<R: io::Read> RollBuf for Buffer<R> {
         Ok(&self.buf[self.pos..self.end])
     }
 
-    fn consume(&mut self, amt: usize) {
-        self.pos = cmp::min(self.pos + amt, self.buf.len());
+    fn consume(&mut self, n: usize) {
+        self.pos = cmp::min(self.pos + n, self.end);
     }
 
     fn roll(&mut self) {
@@ -77,6 +77,9 @@ mod tests {
     fn buffer() {
         let inner: &[u8] = &[1, 2, 3, 4, 5, 6, 7];
         let mut b = Buffer::with_capacity(3, inner);
+
+        // this should have no effect
+        b.consume(2);
 
         {
             let out = b.fill_buf().unwrap();

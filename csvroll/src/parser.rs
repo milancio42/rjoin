@@ -75,7 +75,7 @@ pub struct Parser<R> {
     idx_builder: IndexBuilder,
     idx: Index,
     // the number of consumed records
-    consumed: usize,
+    consumed: Option<usize>,
     parsed: usize,
     aux: Index,
 }
@@ -86,7 +86,7 @@ impl<R> Parser<R> {
             buf ,
             idx_builder ,
             idx: Index::new(),
-            consumed: 0,
+            consumed: None,
             parsed: 0,
             aux: Index::new(),
         }
@@ -95,24 +95,30 @@ impl<R> Parser<R> {
 
 impl<R: io::Read> Parser<R> {
     pub fn parse(&mut self) -> Result<(&[u8], &Index), Box<Error>> {
-        if self.consumed > 0 {
-            let record_offset = cmp::min(self.consumed, self.idx.records.len());
-            let field_offset = *self.idx.records.get(self.consumed - 1)
-                                                .unwrap_or(&self.idx.fields.len());
-            let buf_offset = match self.idx.fields.get(field_offset) {
-                Some(f) => f.start,
-                None => self.parsed,
-            };
-            self.buf.consume(buf_offset);
-            self.buf.roll();
-            roll_index(
-                &mut self.idx,
-                &mut self.aux,
-                buf_offset,
-                field_offset,
-                record_offset,
-            );
-            self.parsed -= buf_offset;
+        if let Some(consumed) = self.consumed {
+            if consumed > 0 {
+                let record_offset = cmp::min(consumed, self.idx.records.len());
+                let field_offset = *self.idx.records.get(consumed - 1)
+                                                    .unwrap_or(&self.idx.fields.len());
+                let buf_offset = match self.idx.fields.get(field_offset) {
+                    Some(f) => f.start,
+                    None => self.parsed,
+                };
+                self.buf.consume(buf_offset);
+                self.buf.roll();
+                roll_index(
+                    &mut self.idx,
+                    &mut self.aux,
+                    buf_offset,
+                    field_offset,
+                    record_offset,
+                );
+                self.parsed -= buf_offset;
+            } else {
+                // in this case the consumer did not consume anything, so we tell the buffer to be
+                // extended on the next call of fill_buf()
+                self.buf.roll();
+            }
         }
         let (s, is_buf_full) = self.buf.fill_buf()?;
         self.idx_builder.build(&s[self.parsed..], self.parsed, &mut self.idx);
@@ -130,7 +136,7 @@ impl<R: io::Read> Parser<R> {
 
     #[inline]
     pub fn consume(&mut self, n: usize) {
-        self.consumed = n;
+        self.consumed = Some(n);
     }
 }
         
@@ -277,6 +283,17 @@ mod tests {
                 consume: vec![2, 1, 1],
                 want: vec![
                     ("a\nb\nc,d".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5 ], vec![1, 2])),
+                    ("c,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![3])),
+                    ("".to_owned(), Index::from_parts(vec![], vec![])),
+                ],
+            },
+            TestCase {
+                input: "a\nb\nc,d,e".to_owned(),
+                consume: vec![1, 0, 1, 1],
+                want: vec![
+                    ("a\nb\nc,d".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5 ], vec![1, 2])),
+                    ("b\nc,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![1])),
+                    ("b\nc,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5, 6..7], vec![1, 4])),
                     ("c,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![3])),
                     ("".to_owned(), Index::from_parts(vec![], vec![])),
                 ],

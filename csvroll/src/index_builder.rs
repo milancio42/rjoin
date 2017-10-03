@@ -31,7 +31,10 @@ impl IndexBuilder {
         idx: &mut Index,
     ) {
         let b_len = (buf.len() + 63) / 64;
-        let apendix = 64 - buf.len() % 64;
+        if b_len == 0 {
+            return;
+        }
+        let appendix = 64 - buf.len() % 64;
 
         self.b_fs.clear();
         self.b_rt.clear();
@@ -48,7 +51,7 @@ impl IndexBuilder {
             &self.m_fs,
             &self.m_rt
         );
-        build_main_index(&self.b_fs, &self.b_rt, buf_offset, apendix, idx);
+        build_main_index(&self.b_fs, &self.b_rt, buf_offset, appendix, idx);
     }
 }
 
@@ -114,7 +117,7 @@ fn build_main_index(
 ) {
 
     let mut f_start = buf_offset;
-    let mut last_f_count = *idx.records().last().unwrap_or(&0);
+    let mut last_f_count = idx.fields().len();
     let mut i = 0usize;
     for (f, r) in b_fs.iter().zip(b_rt) {
         // the record terminator works also as the field separator.
@@ -467,6 +470,23 @@ mod tests {
                 want: Index::from_parts(
                     vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111, 112..120],
                     vec![2, 6, 8]),
+            },
+            TestCase {
+                b_fs: vec![
+                    0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
+                    0b00000000_00000000_00000000_00000000_00000000_10000000_00000000_00000000,
+                ],
+                b_rt: vec![
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_10000000_00000000,
+                ],
+                buf_offset: 24,
+                appendix: 32,
+                idx: Index::from_parts(vec![0..15, 16..23], vec![1]), // the last field belongs to
+                                                                      // an incomplete record
+                want: Index::from_parts(
+                    vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111, 112..120],
+                    vec![1, 6, 8]),
             },
             TestCase {
                 b_fs: vec![

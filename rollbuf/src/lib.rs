@@ -4,119 +4,143 @@ use std::cmp;
 
 const DAFAULT_BUF_SIZE: usize = 8 * 1024;
 
-pub trait RollBuf {
-    fn fill_buf(&mut self) -> Result<&[u8], Box<Error>>;
-    fn consume(&mut self, n: usize);
-    fn roll(&mut self);
-}
-
 #[derive(Debug)]
-pub struct Buffer<R>  {
+pub struct RollBuf<R>  {
     inner: R,
     buf: Vec<u8>,
     pos: usize,
     end: usize,
     aux: Vec<u8>,
-    rolled: bool,
+    is_rolled: bool,
+    max_cap: usize,
 }
 
-impl<R: io::Read> Buffer<R> {
-    pub fn new(inner: R) -> Buffer<R> {
+impl<R: io::Read> RollBuf<R> {
+    pub fn new(inner: R) -> RollBuf<R> {
         Self::with_capacity(DAFAULT_BUF_SIZE, inner)
     }
 
-    pub fn with_capacity(cap: usize, inner: R) -> Buffer<R> {
-        Buffer {
+    pub fn with_capacity(cap: usize, inner: R) -> RollBuf<R> {
+        RollBuf {
             inner ,
             buf: vec![0; cap],
             pos: 0,
             end: 0,
             aux: vec![0; cap],
-            rolled: false,
+            is_rolled: false,
+            max_cap: 1 << 24,
         }
     }
-}
 
-impl<R: io::Read> RollBuf for Buffer<R> {
-    fn fill_buf(&mut self) -> Result<&[u8], Box<Error>> {
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.buf.len()
+    }
+
+    #[inline]
+    pub fn end_position(&self) -> usize {
+        self.end
+    }
+
+    pub fn fill_buf(&mut self) -> Result<(&[u8], bool), Box<Error>> {
         if self.pos >= self.end {
             debug_assert!(self.pos == self.end);
             self.end = self.inner.read(&mut self.buf)?;
             self.pos = 0;
         }
 
-        if self.rolled {
+        if self.is_rolled {
             self.end += self.inner.read(&mut self.buf[self.end..])?;
-            self.rolled = false;
+            self.is_rolled = false;
         }
+
+        let is_full = self.buf.len() == self.end;
             
-        Ok(&self.buf[self.pos..self.end])
+        Ok((&self.buf[self.pos..self.end], is_full))
     }
 
-    fn consume(&mut self, n: usize) {
+    pub fn consume(&mut self, n: usize) {
         self.pos = cmp::min(self.pos + n, self.end);
     }
 
-    fn roll(&mut self) {
-        self.aux.clear();
-        self.aux.extend_from_slice(&self.buf[self.pos..self.end]);
-        let new_end = self.aux.len();
-        self.buf[0..new_end].copy_from_slice(&self.aux);
-        self.pos = 0;
-        self.end = new_end;
-        self.rolled = true;
+    pub fn roll(&mut self) {
+        if self.pos > 0 {
+            self.aux.clear();
+            self.aux.extend_from_slice(&self.buf[self.pos..self.end]);
+            let new_end = self.aux.len();
+            self.buf[0..new_end].copy_from_slice(&self.aux);
+            self.pos = 0;
+            self.end = new_end;
+        } else {
+            let old_len = self.buf.len();
+            let reserved = cmp::min(old_len, self.max_cap - old_len);
+            self.buf.reserve(reserved);
+            self.buf.extend((0..reserved).map(|_| 0));
+        }
+        self.is_rolled = true;
     }
 }
         
 
 #[cfg(test)]
 mod tests {
-    use super::{RollBuf, Buffer};
+    use super::{RollBuf};
 
     #[test]
-    fn buffer() {
+    fn test_rollbuf_no_extend() {
         let inner: &[u8] = &[1, 2, 3, 4, 5, 6, 7];
-        let mut b = Buffer::with_capacity(3, inner);
+        let mut b = RollBuf::with_capacity(3, inner);
 
-        // this should have no effect
-        b.consume(2);
-
-        {
-            let out = b.fill_buf().unwrap();
-            let want = &[1, 2, 3];
-            assert_eq!(out, want);
+        struct TestCase {
+            consume: usize,
+            roll: bool,
+            want: (Vec<u8>, bool),
         }
 
-        b.consume(2);
+        let test_cases = vec![
+            TestCase { consume: 2, roll: false, want: (vec![1, 2, 3], true)  },
+            TestCase { consume: 2, roll: false, want: (vec![3],       true)  },
+            TestCase { consume: 1, roll: false, want: (vec![4, 5, 6], true)  },
+            TestCase { consume: 2, roll: true,  want: (vec![6, 7],    false) },
+            TestCase { consume: 2, roll: false, want: (vec![],        false) },
+        ];
 
-        {
+        for t in test_cases {
+            b.consume(t.consume);
+            if t.roll {
+                b.roll();
+            }
             let out = b.fill_buf().unwrap();
-            let want = &[3];
-            assert_eq!(out, want);
+            assert_eq!(out, (t.want.0.as_slice(), t.want.1));
+        }
+    }
+
+    #[test]
+    fn test_rollbuf_extend() {
+        let inner: &[u8] = &[1, 2, 3, 4, 5, 6, 7];
+        let mut b = RollBuf::with_capacity(3, inner);
+
+        struct TestCase {
+            consume: usize,
+            roll: bool,
+            want: (Vec<u8>, bool),
         }
 
-        b.consume(1);
+        let test_cases = vec![
+            TestCase { consume: 2, roll: false, want: (vec![1, 2, 3],           true)  },
+            TestCase { consume: 0, roll: true,  want: (vec![1, 2, 3, 4, 5, 6],  true)  },
+            TestCase { consume: 4, roll: false, want: (vec![5, 6],              true)  },
+            TestCase { consume: 2, roll: true,  want: (vec![7],                 false) },
+            TestCase { consume: 2, roll: false, want: (vec![],                  false) },
+        ];
 
-        {
+        for t in test_cases {
+            b.consume(t.consume);
+            if t.roll {
+                b.roll();
+            }
             let out = b.fill_buf().unwrap();
-            let want = &[4, 5, 6];
-            assert_eq!(out, want);
-        }
-        
-        b.consume(2);
-        b.roll();
-    
-        {
-            let out = b.fill_buf().unwrap();
-            let want = &[6, 7];
-            assert_eq!(out, want);
-        }
-        
-        b.consume(2);
-        {
-            let out = b.fill_buf().unwrap();
-            let want = &[];
-            assert_eq!(out, want);
+            assert_eq!(out, (t.want.0.as_slice(), t.want.1));
         }
     }
 }

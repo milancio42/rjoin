@@ -94,7 +94,7 @@ impl<R> Parser<R> {
 }
 
 impl<R: io::Read> Parser<R> {
-    pub fn parse(&mut self) -> Result<(&[u8], &Index), Box<Error>> {
+    pub fn parse(&mut self) -> Result<(), Box<Error>> {
         if let Some(consumed) = self.consumed {
             if consumed > 0 {
                 let record_offset = cmp::min(consumed, self.idx.records.len());
@@ -120,7 +120,8 @@ impl<R: io::Read> Parser<R> {
                 self.buf.roll();
             }
         }
-        let (s, is_buf_full) = self.buf.fill_buf()?;
+        let is_buf_full = self.buf.fill_buf()?;
+        let s = self.buf.contents();
         self.idx_builder.build(&s[self.parsed..], self.parsed, &mut self.idx);
         if is_buf_full {
             // we don't know yet if we reached EOF, so we drop the last incomplete field and record
@@ -130,8 +131,12 @@ impl<R: io::Read> Parser<R> {
             // EOF
             self.parsed = self.idx.fields.last().unwrap_or(&(0..0)).end;
         }
+        Ok(())
+    }
 
-        Ok((s, &self.idx))
+    #[inline]
+    pub fn output(&self) -> (&[u8], &Index) {
+        (self.buf.contents(), &self.idx)
     }
 
     #[inline]
@@ -289,11 +294,12 @@ mod tests {
             },
             TestCase {
                 input: "a\nb\nc,d,e".to_owned(),
-                consume: vec![1, 0, 1, 1],
+                consume: vec![1, 0, 1, 0, 1],
                 want: vec![
                     ("a\nb\nc,d".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5 ], vec![1, 2])),
                     ("b\nc,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![1])),
                     ("b\nc,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5, 6..7], vec![1, 4])),
+                    ("c,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![3])),
                     ("c,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![3])),
                     ("".to_owned(), Index::from_parts(vec![], vec![])),
                 ],
@@ -307,7 +313,8 @@ mod tests {
             let mut parser = Parser::from_parts(buf, idx_builder);
 
             for (c, w) in consume.iter().zip(&want) {
-                assert_eq!(parser.parse().unwrap(), (w.0.as_bytes(), &w.1));
+                parser.parse().unwrap();
+                assert_eq!(parser.output(), (w.0.as_bytes(), &w.1));
                 parser.consume(*c);
             }
         }

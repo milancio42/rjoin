@@ -42,7 +42,7 @@ impl<R: io::Read> RollBuf<R> {
         self.end
     }
 
-    pub fn fill_buf(&mut self) -> Result<(&[u8], bool), Box<Error>> {
+    pub fn fill_buf(&mut self) -> Result<bool, Box<Error>> {
         if self.pos >= self.end {
             debug_assert!(self.pos == self.end);
             self.end = self.inner.read(&mut self.buf)?;
@@ -56,7 +56,7 @@ impl<R: io::Read> RollBuf<R> {
 
         let is_full = self.buf.len() == self.end;
             
-        Ok((&self.buf[self.pos..self.end], is_full))
+        Ok(is_full)
     }
 
     pub fn consume(&mut self, n: usize) {
@@ -78,6 +78,10 @@ impl<R: io::Read> RollBuf<R> {
             self.buf.extend((0..reserved).map(|_| 0));
         }
         self.is_rolled = true;
+    }
+
+    pub fn contents(&self) -> &[u8] {
+        &self.buf[self.pos..self.end]
     }
 }
         
@@ -110,8 +114,9 @@ mod tests {
             if t.roll {
                 b.roll();
             }
-            let out = b.fill_buf().unwrap();
-            assert_eq!(out, (t.want.0.as_slice(), t.want.1));
+            let is_full = b.fill_buf().unwrap();
+            let contents = b.contents();
+            assert_eq!((contents, is_full), (t.want.0.as_slice(), t.want.1));
         }
     }
 
@@ -139,8 +144,9 @@ mod tests {
             if t.roll {
                 b.roll();
             }
-            let out = b.fill_buf().unwrap();
-            assert_eq!(out, (t.want.0.as_slice(), t.want.1));
+            let is_full = b.fill_buf().unwrap();
+            let contents = b.contents();
+            assert_eq!((contents, is_full), (t.want.0.as_slice(), t.want.1));
         }
     }
 }

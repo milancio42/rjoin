@@ -28,11 +28,12 @@ impl IndexBuilder {
         &mut self,
         buf: &[u8],
         buf_offset: usize,
+        is_buf_full: bool,
         idx: &mut Index,
-    ) {
+    ) -> usize {
         let b_len = (buf.len() + 63) / 64;
         if b_len == 0 {
-            return;
+            return 0;
         }
         let appendix = 64 - buf.len() % 64;
 
@@ -51,7 +52,7 @@ impl IndexBuilder {
             &self.m_fs,
             &self.m_rt
         );
-        build_main_index(&self.b_fs, &self.b_rt, buf_offset, appendix, idx);
+        build_main_index(&self.b_fs, &self.b_rt, buf_offset, appendix, is_buf_full, idx)
     }
 }
 
@@ -113,8 +114,9 @@ fn build_main_index(
     b_rt: &[u64],
     buf_offset: usize,
     appendix: usize,
+    is_buf_full: bool,
     idx: &mut Index
-) {
+) -> usize {
 
     let mut f_start = buf_offset;
     let mut last_f_count = idx.fields().len();
@@ -144,9 +146,20 @@ fn build_main_index(
     }
 
     // remainder
-    let f_end = buf_offset + i * 64 - appendix;
-    idx.push_field(f_start..f_end);
-    idx.push_record(last_f_count + 1);
+    if is_buf_full {
+        f_start - buf_offset
+    } else {
+        // EOF
+        let f_end = buf_offset + i * 64 - appendix;
+        let last_rt_mask = *b_rt.last().unwrap_or(&0);
+        let is_last_byte_rt = last_rt_mask & (1 << (64 - appendix - 1));
+        if is_last_byte_rt == 0 {
+            // the last byte is not recort terminator
+            idx.push_field(f_start..f_end);
+            idx.push_record(last_f_count + 1);
+        }
+        f_end - buf_offset
+    }
 }
 
 #[cfg(test)]
@@ -383,15 +396,18 @@ mod tests {
     #[test]
     fn test_build_main_index() {
         struct TestCase {
+            memo: String,
             b_fs: Vec<u64>,
             b_rt: Vec<u64>,
             buf_offset: usize,
             appendix: usize,
+            is_buf_full: bool,
             idx: Index,
-            want: Index,
+            want: (Index, usize),
         }
         let test_cases = vec![
             TestCase {
+                memo: "no separator".to_owned(),
                 b_fs: vec![
                     0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
                 ],
@@ -400,10 +416,26 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..64], vec![1]),
+                want: (Index::from_parts(vec![], vec![]), 0),
             },
             TestCase {
+                memo: "no separator with free buffer".to_owned(),
+                b_fs: vec![
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                b_rt: vec![
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                buf_offset: 0,
+                appendix: 0,
+                is_buf_full: false,
+                idx: Index::from_parts(vec![], vec![]),
+                want: (Index::from_parts(vec![0..64], vec![1]), 64),
+            },
+            TestCase {
+                memo: "only field sep".to_owned(),
                 b_fs: vec![
                     0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
                 ],
@@ -412,10 +444,54 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..7, 8..31, 32..55, 56..64], vec![4]),
+                want: (Index::from_parts(vec![0..7, 8..31, 32..55], vec![]), 56),
             },
             TestCase {
+                memo: "only field sep with free buffer".to_owned(),
+                b_fs: vec![
+                    0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
+                ],
+                b_rt: vec![
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                buf_offset: 0,
+                appendix: 0,
+                is_buf_full: false,
+                idx: Index::from_parts(vec![], vec![]),
+                want: (Index::from_parts(vec![0..7, 8..31, 32..55, 56..64], vec![4]), 64),
+            },
+            TestCase {
+                memo: "only field sep at the end".to_owned(),
+                b_fs: vec![
+                    0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                b_rt: vec![
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                buf_offset: 0,
+                appendix: 0,
+                is_buf_full: true,
+                idx: Index::from_parts(vec![], vec![]),
+                want: (Index::from_parts(vec![0..63], vec![]), 64),
+            },
+            TestCase {
+                memo: "only field sep at the end with free buffer".to_owned(),
+                b_fs: vec![
+                    0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                b_rt: vec![
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                ],
+                buf_offset: 0,
+                appendix: 0,
+                is_buf_full: false,
+                idx: Index::from_parts(vec![], vec![]),
+                want: (Index::from_parts(vec![0..63, 64..64], vec![2]), 64),
+            },
+            TestCase {
+                memo: "both, field sep and record term".to_owned(),
                 b_fs: vec![
                     0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
                 ],
@@ -424,10 +500,26 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..7, 8..31, 32..39, 40..55, 56..64], vec![3, 5]),
+                want: (Index::from_parts(vec![0..7, 8..31, 32..39, 40..55], vec![3]), 56),
             },
             TestCase {
+                memo: "both, field sep and record term with free buffer".to_owned(),
+                b_fs: vec![
+                    0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
+                ],
+                b_rt: vec![
+                    0b00000000_00000000_00000000_10000000_00000000_00000000_00000000_00000000,
+                ],
+                buf_offset: 0,
+                appendix: 0,
+                is_buf_full: false,
+                idx: Index::from_parts(vec![], vec![]),
+                want: (Index::from_parts(vec![0..7, 8..31, 32..39, 40..55, 56..64], vec![3, 5]), 64),
+            },
+            TestCase {
+                memo: "only rec terminator at the end".to_owned(),
                 b_fs: vec![
                     0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
                 ],
@@ -436,22 +528,26 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..63, 64..64], vec![1, 2]),
+                want: (Index::from_parts(vec![0..63], vec![1]), 64),
             },
             TestCase {
+                memo: "only rec terminator at the end with free buffer".to_owned(),
                 b_fs: vec![
-                    0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
                 ],
                 b_rt: vec![
-                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+                    0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
                 ],
                 buf_offset: 0,
                 appendix: 0,
+                is_buf_full: false,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..63, 64..64], vec![1]),
+                want: (Index::from_parts(vec![0..63], vec![1]), 64),
             },
             TestCase {
+                memo: "multiple elements".to_owned(),
                 b_fs: vec![
                     0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
                     0b00000000_00000000_00000000_00000000_00000000_10000000_00000000_00000000,
@@ -462,10 +558,17 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 0,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..7, 8..31, 32..55, 56..79, 80..87, 88..128], vec![4, 6]),
+                want: (
+                    Index::from_parts(
+                        vec![0..7, 8..31, 32..55, 56..79, 80..87], 
+                        vec![4]),
+                    88,
+                ),
             },
             TestCase {
+                memo: "multiple elements with appendix".to_owned(),
                 b_fs: vec![
                     0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
                     0b00000000_00000000_00000000_00000000_00000000_10000000_00000000_00000000,
@@ -476,10 +579,17 @@ mod tests {
                 ],
                 buf_offset: 0,
                 appendix: 32,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![], vec![]),
-                want: Index::from_parts(vec![0..7, 8..31, 32..55, 56..79, 80..87, 88..96], vec![4, 6]),
+                want: (
+                    Index::from_parts(
+                        vec![0..7, 8..31, 32..55, 56..79, 80..87], 
+                        vec![4]),
+                    88,
+                )
             },
             TestCase {
+                memo: "multiple elements with appendix and buf offset".to_owned(),
                 b_fs: vec![
                     0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
                     0b00000000_00000000_00000000_00000000_00000000_10000000_00000000_00000000,
@@ -490,29 +600,17 @@ mod tests {
                 ],
                 buf_offset: 24,
                 appendix: 32,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![0..15, 16..23], vec![2]),
-                want: Index::from_parts(
-                    vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111, 112..120],
-                    vec![2, 6, 8]),
+                want: (
+                    Index::from_parts(
+                        vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111],
+                        vec![2, 6]),
+                    88,
+                )
             },
             TestCase {
-                b_fs: vec![
-                    0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_10000000,
-                    0b00000000_00000000_00000000_00000000_00000000_10000000_00000000_00000000,
-                ],
-                b_rt: vec![
-                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
-                    0b00000000_00000000_00000000_00000000_00000000_00000000_10000000_00000000,
-                ],
-                buf_offset: 24,
-                appendix: 32,
-                idx: Index::from_parts(vec![0..15, 16..23], vec![1]), // the last field belongs to
-                                                                      // an incomplete record
-                want: Index::from_parts(
-                    vec![0..15, 16..23, 24..31, 32..55, 56..79, 80..103, 104..111, 112..120],
-                    vec![1, 6, 8]),
-            },
-            TestCase {
+                memo: "multiple elements with appendix and buf offset and empty fields".to_owned(),
                 b_fs: vec![
                     0b00000000_10000000_00000000_00000000_10000000_00000000_00000000_11000000,
                     0b00000000_00000000_00000000_00000000_00000000_10000000_00000000_00000000,
@@ -523,16 +621,21 @@ mod tests {
                 ],
                 buf_offset: 24,
                 appendix: 32,
+                is_buf_full: true,
                 idx: Index::from_parts(vec![0..15, 16..23], vec![2]),
-                want: Index::from_parts(
-                    vec![0..15, 16..23, 24..30, 31..31, 32..55, 56..79, 80..102, 103..103, 104..111, 112..120],
-                    vec![2, 7, 8, 10]),
+                want: (
+                    Index::from_parts(
+                        vec![0..15, 16..23, 24..30, 31..31, 32..55, 56..79, 80..102, 103..103, 104..111],
+                        vec![2, 7, 8]),
+                    88
+                )
             },
         ];
         for t in test_cases {
-            let TestCase { b_fs, b_rt, buf_offset, appendix, mut idx, want } = t;
-            build_main_index(&b_fs, &b_rt, buf_offset, appendix, &mut idx);
-            assert_eq!(idx, want);
+            #[allow(unused_variables)]
+            let TestCase { memo, b_fs, b_rt, buf_offset, appendix, is_buf_full, mut idx, want } = t;
+            let p = build_main_index(&b_fs, &b_rt, buf_offset, appendix, is_buf_full, &mut idx);
+            assert_eq!((idx, p), want);
         }
     }
 }

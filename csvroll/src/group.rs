@@ -7,10 +7,9 @@ use std::io;
 pub struct Group<R> {
     parser: Parser<R>,
     key_idx: Vec<usize>,
-    first_rec_idx: usize,
     first_rec: Range<usize>,
-    last_rec_idx: usize,
-    last_rec_end: usize,
+    rec: Range<usize>,
+    group: Range<usize>,
     is_buf_full: bool,
 }
 
@@ -18,8 +17,8 @@ impl<R: io::Read> Group<R> {
     pub fn init(mut parser: Parser<R>, key_idx: Vec<usize>) -> Result<Self, Box<Error>> {
         let is_buf_full = parser.parse()?;
         let first_rec: Range<usize>;
-        let last_rec_end: usize;
-        let last_rec_idx: usize;
+        let rec: Range<usize>;
+        let group: Range<usize>;
 
         {
             let (_, struct_idx) = parser.output();
@@ -27,13 +26,13 @@ impl<R: io::Read> Group<R> {
             match struct_idx.records().first() {
                 Some(&re) => {
                     first_rec = 0..re;
-                    last_rec_idx = 1;
-                    last_rec_end = re;
+                    rec = first_rec.clone();
+                    group = 0..1;
                 }
                 None => {
                     first_rec = 0..0;
-                    last_rec_idx = 0;
-                    last_rec_end = 0;
+                    rec = first_rec.clone();
+                    group = 0..0;
                 }
             }
         }
@@ -41,10 +40,9 @@ impl<R: io::Read> Group<R> {
         Ok(Self {
             parser ,
             key_idx ,
-            first_rec_idx: 0,
             first_rec ,
-            last_rec_idx ,
-            last_rec_end ,
+            rec ,
+            group ,
             is_buf_full ,
         })
     }
@@ -55,11 +53,11 @@ impl<R: io::Read> Group<R> {
             {
                 let (buf, struct_idx) = self.parser.output();
                 let fields = struct_idx.fields();
-
-                for &re in &struct_idx.records()[self.last_rec_idx..] {
+                for &re in &struct_idx.records()[self.group.end..] {
+                    let rec = self.rec.end..re;
                     match cmp_records(
                         buf,
-                        &fields[self.last_rec_end..re],
+                        &fields[self.rec.end..re],
                         &fields[self.first_rec.clone()],
                         &self.key_idx)? {
 
@@ -67,34 +65,33 @@ impl<R: io::Read> Group<R> {
                             return Err("The records are not sorted in ascending order".into());
                         }
                         Ordering::Greater => {
-                            let g = self.first_rec_idx..self.last_rec_idx;
-                            self.first_rec_idx = self.last_rec_idx;
-                            self.first_rec = self.last_rec_end..re;
-                            self.last_rec_idx += 1;
-                            self.last_rec_end = re;
-                            return Ok(g.clone());
+                            let g = self.group.clone();
+                            self.first_rec = rec.clone();
+                            self.rec = rec.clone();
+                            self.group = self.group.end..(self.group.end + 1);
+                            return Ok(g);
                         }
                         Ordering::Equal => {
-                            self.last_rec_idx += 1;
-                            self.last_rec_end = re;
+                            self.rec = rec.clone();
+                            self.group.end += 1;
                         }
                     }
                 }
             }
 
             if self.is_buf_full {
-                let consumed = self.first_rec.start;
-                self.last_rec_idx -= self.first_rec_idx;
-                self.first_rec_idx = 0;
-                self.first_rec = 0..(self.first_rec.end - consumed);
-                self.last_rec_end -= consumed;
-                self.parser.consume(consumed);
+                let field_offset = self.first_rec.start;
+                let rec_offset = self.group.start;
+                self.first_rec = (self.first_rec.start - field_offset)..(self.first_rec.end - field_offset);
+                self.rec = (self.rec.start - field_offset)..(self.rec.end - field_offset);
+                self.group = (self.group.start - rec_offset)..(self.group.end - rec_offset);
+                self.parser.consume(rec_offset);
                 self.is_buf_full = self.parser.parse()?;
             } else {
-                let g_start = self.first_rec_idx;
-                self.first_rec_idx = self.last_rec_idx;
-                return Ok(g_start..self.last_rec_idx);
-                
+                let g = self.group.clone();
+                self.group = self.group.end..self.group.end;
+
+                return Ok(g);
             }
         }
     }
@@ -190,7 +187,7 @@ mod tests {
                 ],
             },
             TestCase {
-                input: "a,0\na,1\nb,0\nb,0".to_owned(),
+                input: "a,0\na,1\nb,0\nc,0".to_owned(),
                 buf_len: 12,
                 key_idx: vec![0],
                 want: vec![
@@ -208,9 +205,26 @@ mod tests {
                     2..2,),
                 ],
             },
+            TestCase {
+                input: "a,0\na,1\nb,0\nb,1".to_owned(),
+                buf_len: 12,
+                key_idx: vec![0],
+                want: vec![
+                   ("a,0\na,1\nb,0\n".to_owned(),
+                    Index::from_parts(vec![0..1, 2..3, 4..5, 6..7, 8..9, 10..11], vec![2, 4, 6]),
+                    0..2,),
+                   ("b,0\nb,1".to_owned(),
+                    Index::from_parts(vec![0..1, 2..3, 4..5, 6..7], vec![2, 4]),
+                    0..2,),
+                   ("b,0\nb,1".to_owned(),
+                    Index::from_parts(vec![0..1, 2..3, 4..5, 6..7], vec![2, 4]),
+                    2..2,),
+                ],
+            },
         ];
 
-        for t in test_cases {
+        for (i, t) in test_cases.into_iter().enumerate() {
+            println!("test case: {}", i);
             let TestCase { input, buf_len, key_idx, want } = t;
             let buf = RollBuf::with_capacity(buf_len, input.as_bytes());
             let idx_builder = IndexBuilder::new(b',', b'\n');

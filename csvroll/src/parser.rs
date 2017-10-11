@@ -122,22 +122,13 @@ impl<R: io::Read> Parser<R> {
         }
         let is_buf_full = self.buf.fill_buf()?;
         let s = self.buf.contents();
-        self.idx_builder.build(&s[self.parsed..], self.parsed, &mut self.idx);
-        if is_buf_full {
-            // we don't know yet if we reached EOF, so we drop the last incomplete field and record
-            self.parsed = self.idx.fields.pop().unwrap_or(0..0).start;
-            let _ = self.idx.records.pop();
-        } else {
-            // EOF
-            let Range { start, end } = *self.idx.fields.last().unwrap_or(&(0..0));
-            self.parsed = end;
-            // if the input ends with the record terminator or field separator, drop the last dummy
-            // field and record
-            if start == end {
-                let _ = self.idx.fields.pop();
-                let _ = self.idx.records.pop();
-            }
-        }
+        self.parsed += self.idx_builder.build(
+            &s[self.parsed..],
+            self.parsed,
+            is_buf_full,
+            &mut self.idx
+        );
+
         Ok(is_buf_full)
     }
 
@@ -305,12 +296,11 @@ mod tests {
             TestCase {
                 input: "a\nb\nc,d,e".to_owned(),
                 buf_len: 7,
-                consume: vec![1, 0, 1, 0, 1],
+                consume: vec![1, 0, 1, 1, 1],
                 want: vec![
                     ("a\nb\nc,d".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5 ], vec![1, 2])),
                     ("b\nc,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![1])),
                     ("b\nc,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5, 6..7], vec![1, 4])),
-                    ("c,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![3])),
                     ("c,d,e".to_owned(), Index::from_parts(vec![0..1, 2..3, 4..5], vec![3])),
                     ("".to_owned(), Index::from_parts(vec![], vec![])),
                 ],
@@ -331,19 +321,21 @@ mod tests {
                 consume: vec![2, 1, 1],
                 want: vec![
                     ("a\nb\n".to_owned(), Index::from_parts(vec![0..1, 2..3], vec![1, 2])),
-                    ("c,".to_owned(), Index::from_parts(vec![0..1], vec![1])),
+                    ("c,".to_owned(), Index::from_parts(vec![0..1, 2..2], vec![2])),
                     ("".to_owned(), Index::from_parts(vec![], vec![])),
                 ],
             },
         ];
 
-        for t in test_cases {
+        for (i, t) in test_cases.into_iter().enumerate() {
+            println!("test case: {}", i);
             let TestCase { input, buf_len, consume, want } = t;
             let buf = RollBuf::with_capacity(buf_len, input.as_bytes());
             let idx_builder = IndexBuilder::new(b',', b'\n');
             let mut parser = Parser::from_parts(buf, idx_builder);
 
-            for (c, w) in consume.iter().zip(&want) {
+            for (i, (c, w)) in consume.iter().zip(&want).enumerate() {
+                println!("parse: {}", i);
                 parser.parse().unwrap();
                 assert_eq!(parser.output(), (w.0.as_bytes(), &w.1));
                 parser.consume(*c);

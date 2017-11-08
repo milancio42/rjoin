@@ -1,12 +1,9 @@
-#[macro_use]
-extern crate clap;
-extern crate csv_core;
+extern crate csvroll;
+extern crate rollbuf;
 
-pub mod reader;
+pub mod group_zerocopy;
 pub mod printer;
-pub mod record;
 pub mod join;
-pub mod args;
 
 
 

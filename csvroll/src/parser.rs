@@ -52,7 +52,7 @@ impl Index {
     }
 
     #[inline]
-    pub fn get_record(&self, n: usize) -> Option<&[Range<usize>]> {
+    pub fn get_record(&self, n: usize) -> Option<Range<usize>> {
         if n >= self.records.len() {
             return None;
         }
@@ -64,7 +64,7 @@ impl Index {
             Some(&start) => start,
             None => 0,
         };
-        Some(&self.fields[start..end])
+        Some(start..end)
     }
 
 }
@@ -193,12 +193,12 @@ mod tests {
             TestCase {
                 idx: Index::from_parts(vec![0..1, 2..3, 4..5], vec![2, 3]),
                 n: 0,
-                want: Some(vec![0..1, 2..3]),
+                want: Some(0..2),
             },
             TestCase {
                 idx: Index::from_parts(vec![0..1, 2..3, 4..5], vec![2, 3]),
                 n: 1,
-                want: Some(vec![4..5]),
+                want: Some(2..3),
             },
             TestCase {
                 idx: Index::from_parts(vec![0..1, 2..3, 4..5], vec![2, 3]),
@@ -207,7 +207,7 @@ mod tests {
             },
         ];
         for t in test_cases {
-            assert_eq!(t.idx.get_record(t.n), t.want.as_ref().map(|f| f.as_slice()));
+            assert_eq!(t.idx.get_record(t.n), t.want);
         }
     }
 

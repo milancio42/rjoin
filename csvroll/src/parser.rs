@@ -138,6 +138,16 @@ impl<R: io::Read> Parser<R> {
     }
 
     #[inline]
+    pub fn is_buf_full(&self) -> bool {
+        self.buf.is_full()
+    }
+
+    #[inline]
+    pub fn consumed(&self) -> usize {
+        self.consumed.unwrap_or(0)
+    }
+
+    #[inline]
     pub fn consume(&mut self, n: usize) {
         self.consumed = Some(n);
     }

@@ -1,5 +1,5 @@
 use super::printer::Print;
-use super::group_zerocopy::{Group, cmp_records,};
+use super::csv::basic::{FirstRec, Group, cmp_records,};
 use std::io;
 use std::cmp::Ordering;
 use std::error::Error;
@@ -198,12 +198,57 @@ pub fn join<R0,R1,W,P>(
     }
 }
 
+pub fn head<R0,R1,W,P>(
+    first_rec0: &mut FirstRec<R0>,
+    first_rec1: &mut FirstRec<R1>,
+    w: &mut W,
+    mut p: P,
+    opts: JoinOptions,
+) -> Result<(), Box<Error>>
+    where R0: io::Read,
+          R1: io::Read,
+          W: io::Write,
+          P: Print<W>,
+{
+    let fr0 = first_rec0.is_present()?;
+    let fr1 = first_rec1.is_present()?;
+
+    if opts.show_both || (opts.show_left && opts.show_right) {
+        if fr0 && fr1 {
+            let (buf0, idx0) = first_rec0.buf_index();
+            let (buf1, idx1) = first_rec1.buf_index();
+            p.print_both(
+                w,
+                buf0,
+                buf1,
+                idx0.fields(),
+                idx1.fields(),
+                idx0.records(),
+                idx1.records(),
+                0..1,
+                0..1,
+            )?;
+        }
+    } else if opts.show_left {
+        if fr0 {
+            let (buf0, idx0) = first_rec0.buf_index();
+            p.print_left(w, buf0, idx0.fields(), idx0.records(), 0..1)?;
+        }
+    }
+    else {
+        if fr1 {
+            let (buf1, idx1) = first_rec1.buf_index();
+            p.print_right(w, buf1, idx1.fields(), idx1.records(), 0..1)?;
+        }
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
-    use super::{JoinOptions, join};
+    use super::{JoinOptions, join, head,};
     use printer::KeyFirst;
-    use group_zerocopy::{Group};
+    use csv::basic::{FirstRec, Group};
     use rollbuf::RollBuf;
     use csvroll::index_builder::IndexBuilder;
     use csvroll::parser::Parser;
@@ -322,6 +367,79 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_header() {
+        struct TestCase {
+            note: String,
+            data0: String,
+            data1: String,
+            opts: JoinOptions,
+            want: String,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                note: "inner join".into(),
+                data0: "col0,col1\naltitude,low\naltitude,high\ncolor,red".into(),
+                data1: "col2,col3\ncolor,orange\nsize,small\nsize,large".into(),
+                opts: JoinOptions { show_left: false, show_right: false, show_both: true },
+                want: "col0,col1,col3\n".into(),
+            },
+            TestCase {
+                note: "left outer join".into(),
+                data0: "col0,col1\naltitude,low\naltitude,high\ncolor,red".into(),
+                data1: "col2,col3\ncolor,orange\nsize,small\nsize,large".into(),
+                opts: JoinOptions { show_left: true, show_right: false, show_both: true },
+                want: "col0,col1,col3\n".into(),
+            },
+            TestCase {
+                note: "left exclusion join".into(),
+                data0: "col0,col1\naltitude,low\naltitude,high\ncolor,red".into(),
+                data1: "col2,col3\ncolor,orange\nsize,small\nsize,large".into(),
+                opts: JoinOptions { show_left: true, show_right: false, show_both: false },
+                want: "col0,col1\n".into(),
+            },
+            TestCase {
+                note: "right outer join".into(),
+                data0: "col0,col1\naltitude,low\naltitude,high\ncolor,red".into(),
+                data1: "col2,col3\ncolor,orange\nsize,small\nsize,large".into(),
+                opts: JoinOptions { show_left: false, show_right: true, show_both: true },
+                want: "col0,col1,col3\n".into(),
+            },
+            TestCase {
+                note: "right exclusion join".into(),
+                data0: "col0,col1\naltitude,low\naltitude,high\ncolor,red".into(),
+                data1: "col2,col3\ncolor,orange\nsize,small\nsize,large".into(),
+                opts: JoinOptions { show_left: false, show_right: true, show_both: false },
+                want: "col2,col3\n".into(),
+            },
+            TestCase {
+                note: "full outer join".into(),
+                data0: "col0,col1\naltitude,low\naltitude,high\ncolor,red".into(),
+                data1: "col2,col3\ncolor,orange\nsize,small\nsize,large".into(),
+                opts: JoinOptions { show_left: true, show_right: true, show_both: true },
+                want: "col0,col1,col3\n".into(),
+            },
+        ];
+
+        for t in test_cases {
+            let TestCase {note, data0, data1, opts, want } = t;
+            let buf0 = RollBuf::with_capacity(16, data0.as_bytes());
+            let buf1 = RollBuf::with_capacity(16, data1.as_bytes());
+            let idx_builder0 = IndexBuilder::new(b',', b'\n');
+            let idx_builder1 = IndexBuilder::new(b',', b'\n');
+            let parser0 = Parser::from_parts(buf0, idx_builder0);
+            let parser1 = Parser::from_parts(buf1, idx_builder1);
+            let mut first_rec0 = FirstRec::init(parser0).unwrap();
+            let mut first_rec1 = FirstRec::init(parser1).unwrap();
+            let mut out: Vec<u8> = Vec::new();
+            let printer = KeyFirst::from_parts(b',', b'\n', vec![0], vec![0]);
+
+            println!("{}", note);
+            head(&mut first_rec0, &mut first_rec1, &mut out, printer, opts).unwrap();
+            assert_eq!(out, want.as_bytes());
+        }
+    }
 }
          
         

@@ -59,6 +59,44 @@ impl<R: io::Read> Group<R> {
         })
     }
     
+    pub fn from_initiated(parser: Parser<R>, key_idx: Vec<usize>) -> Result<Self, Box<Error>> {
+        let is_buf_full = parser.is_buf_full();
+        let consumed = parser.consumed();
+        let first_rec: Range<usize>;
+        let rec: Range<usize>;
+        let group: Range<usize>;
+        let rec_count: usize;
+
+        {
+            let (_, struct_idx) = parser.output();
+
+            match struct_idx.get_record(consumed + 1) {
+                Some(r) => {
+                    first_rec = r.clone();
+                    rec = r;
+                    rec_count = consumed + 1;
+                    group = consumed..rec_count;
+                }
+                None => {
+                    first_rec = 0..0;
+                    rec = first_rec.clone();
+                    group = 0..0;
+                    rec_count = 0;
+                }
+            }
+        }
+
+        Ok(Self {
+            parser ,
+            key_idx ,
+            first_rec ,
+            rec ,
+            group ,
+            rec_count ,
+            is_buf_full ,
+        })
+    }
+
     #[inline]
     pub fn next_group(&mut self) -> Result<Option<Range<usize>>, Box<Error>> {
         loop {
@@ -168,7 +206,51 @@ pub fn cmp_records(
     Ok(Ordering::Equal)
 }
 
-    
+pub struct FirstRec<R> {
+    parser: Parser<R>,
+    is_buf_full: bool,
+}
+
+impl<R:io::Read> FirstRec<R> {
+    pub fn init(mut parser: Parser<R>) -> Result<Self, Box<Error>> {
+        let is_buf_full = parser.parse()?;
+
+        Ok(Self {
+            parser ,
+            is_buf_full ,
+        })
+    }
+
+    pub fn is_present(&mut self) -> Result<bool, Box<Error>> {
+        loop {
+            let is_empty = {
+                let (_, struct_idx) = self.parser.output();
+                struct_idx.records().is_empty()
+            };
+
+            if is_empty {
+                if self.is_buf_full {
+                    self.parser.consume(0);
+                    self.is_buf_full = self.parser.parse()?;
+                } else {
+                    return Ok(false);
+                }
+            } else {
+                self.parser.consume(1);
+                return Ok(true);
+            }
+        }
+    }
+
+    pub fn into_inner(self) -> Parser<R> {
+        self.parser
+    }
+
+    #[inline]
+    pub fn buf_index(&self) -> (&[u8], &Index) {
+        self.parser.output()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -274,6 +356,49 @@ mod tests {
                 let (buf, idx) = group.buf_index();
                 assert_eq!((buf, idx, recs), (w.0.as_bytes(), &w.1, w.2));
             }
+        }
+    }
+
+    #[test]
+    fn test_first_rec() {
+        struct TestCase {
+            input: String,
+            buf_len: usize,
+            want: bool,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                input: "a,0\na,1\nb,0\nc,0".to_owned(),
+                buf_len: 24,
+                want: true,
+            },
+            TestCase {
+                input: "a,0\na,1\nb,0\nc,0".to_owned(),
+                buf_len: 11,
+                want: true,
+            },
+            TestCase {
+                input: "col1,col2\na,0\nb,0".to_owned(),
+                buf_len: 8,
+                want: true,
+            },
+            TestCase {
+                input: "col1,col2".to_owned(),
+                buf_len: 8,
+                want: true,
+            },
+        ];
+
+        for (i, t) in test_cases.into_iter().enumerate() {
+            println!("test case: {}", i);
+            let TestCase { input, buf_len, want } = t;
+            let buf = RollBuf::with_capacity(buf_len, input.as_bytes());
+            let idx_builder = IndexBuilder::new(b',', b'\n');
+            let parser = Parser::from_parts(buf, idx_builder);
+            let mut fr = FirstRec::init(parser).unwrap();
+
+            assert_eq!(fr.is_present().unwrap(), want);
         }
     }
 }

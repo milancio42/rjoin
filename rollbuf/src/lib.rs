@@ -83,6 +83,10 @@ impl<R: io::Read> RollBuf<R> {
     pub fn contents(&self) -> &[u8] {
         &self.buf[self.pos..self.end]
     }
+
+    pub fn is_full(&self) -> bool {
+        self.buf.len() == self.end
+    }
 }
         
 

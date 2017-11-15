@@ -14,6 +14,7 @@ use std::ops::Range;
 ///   * FULL OUTER JOIN - `show_left: true`, `show_right: true`, `show_both: true`
 ///
 /// and even exclusive joins (outer joins without the inner part).
+#[derive(Debug, Clone, Copy)]
 pub struct JoinOptions {
     show_left: bool,
     show_right: bool,

@@ -14,4 +14,9 @@ license = "Unlicense/MIT"
 [dependencies]
 rollbuf = { path = "./rollbuf" }
 csvroll = { path = "./csvroll" }
+clap = "2.25.1"
+
+[[bin]]
+name = "rj"
+path = "src/bin/main.rs"
 

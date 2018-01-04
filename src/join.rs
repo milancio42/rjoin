@@ -47,43 +47,8 @@ impl JoinOptions {
     }
 }
 
-//// Join the groups of records `g0` and `g1` parsed by CSV readers `rdr0` and `rdr1`. The output is
-//// written into `w` using the provided printer `p`. 
-//// # Example
-////
-//// ```
-//// extern crate rjoin;
-////
-//// use std::error::Error;
-//// use rjoin::record::{RecordBuilder, GroupBuilder};
-//// use rjoin::reader::ReaderBuilder;
-////
-//// # fn main() { example().unwrap(); }
-////
-//// fn example() -> Result<(), Box<Error>> {
-////     let data0 = "a,a,0\na,b,1";
-////     let data1 = "a,b,2\na,c,3";
-////
-////     let mut rdr0 = ReaderBuilder::default().from_reader(data0.as_bytes());
-////     let mut rdr1 = ReaderBuilder::default().from_reader(data1.as_bytes());
-////
-////     let rec0 = RecordBuilder::default().keys(&[1,0][..]).build()?;
-////     let rec1 = RecordBuilder::default().keys(&[1,0][..]).build()?;
-////
-////     let mut g0 = GroupBuilder::default().from_record(rec0);
-////     let mut g1 = GroupBuilder::default().from_record(rec1);
-////
-////     let p = KeyFirst::default();
-////
-////     // show all - equivalent to FULL OUTER JOIN in SQL
-////     let opts = JoinOptions::from_options(true, true, true);
-////     let mut out: Vec<u8> = Vec::new();
-////     let _ = join(&mut rdr0, &mut rdr1, &mut g0, &mut g1, &mut out, p, opts)?;
-////
-////     assert_eq!(&out[..], &b"a,a,0\nb,a,1,2\nc,a,3\n"[..]); 
-////     Ok(())
-//// }
-//// ```
+/// Join the groups of records `group0` and `group1`. The output is
+/// written into `w` using the provided printer `p`. 
 pub fn join<R0,R1,W,P>(
     group0: &mut Group<R0>,
     group1: &mut Group<R1>,

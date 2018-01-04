@@ -1,6 +1,6 @@
 # Rjoin
 
-A tool for joining CSV data on command line.
+`rjoin` is a new command line utility for joining records of two files on common fields. 
 
 Dual-licensed under MIT or [unlicense](unlicense.org)
 
@@ -8,26 +8,12 @@ Dual-licensed under MIT or [unlicense](unlicense.org)
 
 [https://docs.rs/rjoin](https://docs.rs/rjoin)
 
-### Usage
-
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-rjoin = "0.1.0"
-```
-
-add this to your crate root:
-
-```rust
-extern crate rjoin;
-```
 ### Installation
 
 The binary name for `rjoin` is `rj`.
 
 ```bash
-$ cargo install rjoin
+$RUSTFLAGS="-C target-cpu=native" cargo install rjoin
 ```
 
 (don't forget to add `$HOME/.cargo/bin` to your path).
@@ -36,17 +22,15 @@ $ cargo install rjoin
 
 *   it can perform the join on multiple fields
 *   it has higher flexibilty on specifying the field separators and record terminators compared to GNU join
-*   it has a very flexible CSV parser which can recognize quotes, escape characters and even comments (currently based on BurntSushi's excellent [CSV](https://github.com/BurntSushi/rust-csv) library)
-*   it is likely faster than GNU join when checking the correct order of records
 *   it has (subjectively) cleaner CLI. 
 
-### Why shouldn't you use `rjoin`?
+### Why you should not use `rjoin`?
 
-*   you need a specific output format. GNU join is more flexible on this, but it can be mitigated by piping the output to `cut` or `awk`.
+*   you need a specific output format. GNU join is more flexible on this, but it can be mitigated by piping the output to `awk`.
 *   you need a case insensitive join. This can be mitigated by preprocessing data with `tr` utility.
-*   you need to perform the join as fast as possible by not checking the correct order of the input.
+*   you don't have an AVX2 capable CPU. 
 
-### Example
+### Quick Example
 
 Let's suppose we have the following data:
 
@@ -57,9 +41,7 @@ color,green
 color,red
 shape,circle
 shape,square
-```
 
-```bash
 $ cat right
 altitude,low                                        
 altitude,high                                       
@@ -84,7 +66,7 @@ Some comments:
     `rjoin` supports **multiple fields** as the key, but the number of key fields in both files must be equal.
 *   by default, only the lines with the common key are printed. If you wish to print also unmached lines from the left or right file, use 
     any combination of these: `--show-left/-l`, `--show-right/-r` or `--show-both/-b`. Note however, if you use any of these options, the default behavior 
-    of showing matches of both files is reset and must be made explicit if desired by adding `-b`. 
+    is reset (e.g. if you want to see the unmatched lines in the left file along with the matched lines, use `-lb`. With only `-l` you will not see the matched lines.)
 *   there are multiple lines with the same key in both files, resulting in [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product).
 
 To get the lines with the unmatched key in both files:
@@ -97,10 +79,20 @@ shape,circle
 shape,square
 ```
 
+Check the [tutorial](examples/tutorial.md) for the detailed walkthrough.
+
 ### Contributing
 
 Any kind of contribution (e.g. comment, suggestion, question, bug report and pull request) is welcome.
 
+### Why Rust?
+
+Because C eats a bloody lot of mental resources only to avoid shooting my leg, or worse.
+
 ### Acknowledgments
 
-A big thanks to BurntSushi for his excellent work.
+The CSV parser used in Rjoin is based on the work of [Y. Li, N. R. Katsipoulakis, B. Chandramouli, J. Goldstein, and D. Kossmann. Mison: a fast JSON parser for data analytics. In *VLDB*, 2017](http://www.vldb.org/pvldb/vol10/p1118-li.pdf).
+
+The SIMD part was shamelessly copied from [`pikkr`](https://github.com/pikkr/pikkr)
+
+And finally a big thanks to BurntSushi for his excellent work.

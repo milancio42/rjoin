@@ -4,11 +4,13 @@ pub fn r(x: u64) -> u64 {
     x & x.wrapping_sub(1)
 }
 
+#[allow(dead_code)]
 #[inline]
 pub fn e(x: u64) -> u64 {
     x & x.wrapping_neg()
 }
 
+#[allow(dead_code)]
 #[inline]
 pub fn s(x: u64) -> u64 {
     x ^ x.saturating_sub(1)

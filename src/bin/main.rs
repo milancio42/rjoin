@@ -43,7 +43,8 @@ fn run(args: Args) -> Result<(), Box<Error>> {
         args.left_key().to_owned(),
         args.right_key().to_owned(),
     );
-    let mut out = io::BufWriter::with_capacity(OUTBUF_CAP, io::stdout());
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::with_capacity(OUTBUF_CAP, stdout.lock());
     let opts = JoinOptions::from_options(args.show_left(), args.show_right(), args.show_both());
 
     let (parser0, parser1) = if args.header() {

@@ -1,0 +1,38 @@
+## generate data
+```bash
+$ cat /dev/urandom | tr -dc 'a-z' | fold -w 5 | head -n 1000000 | sort | awk -vOFS=',' '{print $1, "L"}' > left
+$ cat /dev/urandom | tr -dc 'a-z' | fold -w 5 | head -n 1000000 | sort | awk -vOFS=',' '{print $1, "R"}' > right
+```
+
+## inner join performance
+
+| Tool | Command | Line Count | Time |
+| ---- | ------- | ---------- | ---- |
+| rjoin | rj left right | 84107 | **0.18s** |
+| GNU join | LC_COLLATE=C join -t ','  left right | 84107 | 0.19s |
+
+## left outer join performance
+
+| Tool | Command | Line Count | Time |
+| ---- | ------- | ---------- | ---- |
+| rjoin | rj -lb left right | 1003428 | 0.25s |
+| GNU join | LC_COLLATE=C join -t ',' -a 1  left right | 1003428 | 0.25s |
+
+## full outer join performance
+
+| Tool | Command | Line Count | Time |
+| ---- | ------- | ---------- | ---- |
+| rjoin | rj -lbr left right | 1922744 | 0.34s |
+| GNU join | LC_COLLATE=C join -t ',' -a 1 -a 2  left right | 1922744 | **0.29s** |
+
+## observations
+
+`rjoin` is slightly faster when the output is small but loses with medium-large outputs. There are two factors in play here:
+-  `rjoin` uses a faster parser, based on AVX2 instructions rather than a simple `memchr` based in GNU join.
+-  `rjoin` pays a penalty for multiple fields join. Since the number of join fields is not known in advance, nor is their order, it introduces another indirection for them. This seems to have a non-trivial cost when printing the output. However this can be mitigated by specializing a single field joins.
+
+
+## final notes
+
+GNU join uses `LC_COLLATE=C' enviromental variable to force the byte ordering when comparing the keys. The same ordering is used in `rjoin`.
+Both tools check if the input is ordered correctly.

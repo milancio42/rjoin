@@ -1,6 +1,6 @@
 [package]
 name = "rjoin"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Milan Opath <milan.opath@gmail.com>"]
 description = "A tool for joining CSV data on command line."
 documentation = "https://docs.rs/rjoin"
@@ -12,8 +12,8 @@ license = "Unlicense/MIT"
 
 
 [dependencies]
-rollbuf = { path = "./rollbuf" }
-csvroll = { path = "./csvroll" }
+rollbuf = { path = "rollbuf", version = "0.0.1" }
+csvroll = { path = "csvroll", version = "0.0.1" }
 clap = "2.25.1"
 
 [[bin]]

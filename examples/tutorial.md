@@ -1,4 +1,4 @@
-## How to join 2 files using `rjoin`
+## How to join 2 files using `rj`
 
 ### Defaults
 
@@ -31,13 +31,14 @@ By default, the result contains only the matched records.
 
 ### Specify the key fields
 
+For both files:
 ```bash
 $ rj -k=1 countries cities
 1,Italy,Rome
 3,Spain,Madrid
 ```
 
-You can specify them for each file:
+Or for each file separately:
 ```bash
 $ rj --left-key=1 --right-key=1 countries cities
 1,Italy,Rome
@@ -70,7 +71,7 @@ $ rj --in-delimiter=',' --out-delimiter=';' countries cities
 
 You can specify the input field delimiter for each file (again with output field delimiter):
 ```bash
-$ rj --in-left-delimiter=',' --in-right-delmiter=',' --out-delimiter=',' countries cities
+$ rj --in-left-delimiter=',' --in-right-delimiter=',' --out-delimiter=',' countries cities
 1,Italy,Rome
 3,Spain,Madrid
 ```
@@ -181,8 +182,9 @@ celebrated author,yet another common book name
 
 ## How to reorder the output columns
 
-Currently `rjoin` output is composed of the key fields followed by the non-key fields from left and right file, if any.
+Currently `rj` output is composed of the key fields followed by the non-key fields from left and right file, if any.
 If you wish a different order, you can use `awk`.
+
 Do one thing and do it well. Output fields reordering is not the part of *the one thing*.
 
 ```bash
@@ -190,6 +192,3 @@ $ rj countries cities | awk -vFS=',' -vOFS=',' '{print $1, $3, $2}'
 1,Rome,Italy
 3,Madrid,Spain
 ```
-
-
-

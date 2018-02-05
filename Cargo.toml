@@ -12,8 +12,8 @@ license = "Unlicense/MIT"
 
 
 [dependencies]
-rollbuf = { path = "rollbuf", version = "0.0.1" }
-csvroll = { path = "csvroll", version = "0.0.1" }
+rollbuf = { path = "rollbuf", version = "0.1.0" }
+csvroll = { path = "csvroll", version = "0.1.0" }
 clap = "2.25.1"
 
 [[bin]]

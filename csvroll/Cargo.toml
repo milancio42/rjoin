@@ -3,7 +3,13 @@ name = "csvroll"
 version = "0.1.0"
 authors = ["Milan Opath <milan.opath@gmail.com>"]
 description = "A low-level, non-FSM, zero-copy CSV parser."
+documentation = "https://docs.rs/csvroll"
+homepage = "https://github.com/milancio42/rjoin"
+readme = "README.md"
+license = "Unlicense/MIT"
+keywords = ["csv", "parser", "SIMD", "delimited"]
+
 
 [dependencies]
 x86intrin = "0.4.3"
-rollbuf = { path = "../rollbuf" }
+rollbuf = { path = "rollbuf", version = "0.1.0" }
